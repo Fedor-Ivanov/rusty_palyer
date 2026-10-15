@@ -22,6 +22,7 @@ pub struct FileMetadata {
     pub artist: String,
     pub album: String,
     pub duration_secs: u64,
+    pub album_cover: Option<Vec<u8>>,
 }
 
 pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
@@ -50,6 +51,8 @@ pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
         .and_then(|t| t.album().map(|s| s.to_string()))
         .unwrap_or_default();
 
+    let album_cover = tag.and_then(|t| t.pictures().first().map(|p| p.data().to_vec()));
+
     let duration_secs = tagged.properties().duration().as_secs();
 
     Ok(FileMetadata {
@@ -57,6 +60,7 @@ pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
         artist,
         album,
         duration_secs,
+        album_cover,
     })
 }
 

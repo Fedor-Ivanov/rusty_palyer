@@ -8,8 +8,9 @@ pub struct Track {
     pub path: PathBuf,
     pub title: String,
     pub artist: String,
-    pub album: String,
     pub duration_secs: u64,
+    pub album: String,
+    pub album_cover: Option<Vec<u8>>,
 }
 
 impl Track {
@@ -24,6 +25,7 @@ impl Track {
             artist: meta.artist,
             album: meta.album,
             duration_secs: meta.duration_secs,
+            album_cover: meta.album_cover,
         })
     }
 }
