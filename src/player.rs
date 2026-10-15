@@ -1,5 +1,6 @@
 use serde::Serialize;
 use std::{
+    collections::VecDeque,
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -24,6 +25,9 @@ pub enum PlayerState {
 pub struct Player {
     pub current_track: Option<Track>,
     pub state: PlayerState,
+    pub list: VecDeque<Track>,
+    /// Позиция `current_track` в `list`
+    pub current_index: Option<usize>,
 }
 
 impl Default for Player {
@@ -31,6 +35,8 @@ impl Default for Player {
         Self {
             current_track: None,
             state: PlayerState::Stopped,
+            list: VecDeque::new(),
+            current_index: None,
         }
     }
 }
@@ -97,7 +103,7 @@ impl PlayerController {
     }
 
     /// Делает трек текущим. Воспроизведение не начинается — для этого есть `play`.
-    pub fn set_track(&mut self, track: Track) -> Result<(), String> {
+    fn set_track(&mut self, track: Track) -> Result<(), String> {
         // Если что-то уже играло, останавливаем: выбран другой трек
         self.audio.send(AudioCmd::Stop).map_err(|e| e.to_string())?;
 
@@ -107,6 +113,39 @@ impl PlayerController {
         self.player.state = PlayerState::Stopped;
 
         Ok(())
+    }
+
+    /// Заменяет список треков. Текущий трек не меняется — его выбирают через `select`.
+    pub fn set_list(&mut self, tracks: impl IntoIterator<Item = Track>) {
+        self.player.list = tracks.into_iter().collect();
+        self.player.current_index = None;
+    }
+
+    /// Делает текущим трек из списка по его позиции.
+    pub fn select(&mut self, index: usize) -> Result<(), String> {
+        let track = self
+            .player
+            .list
+            .get(index)
+            .cloned()
+            .ok_or("Трека с таким номером нет в списке")?;
+        self.set_track(track)?;
+        self.player.current_index = Some(index);
+        Ok(())
+    }
+
+    /// Запускает трек, следующий за текущим в списке. Если текущий — последний,
+    /// делает текущим первый трек списка, но не запускает его.
+    pub fn play_next(&mut self) -> Result<(), String> {
+        if self.player.list.is_empty() {
+            return Ok(());
+        }
+        let next = self.player.current_index.map_or(0, |index| index + 1);
+        if next >= self.player.list.len() {
+            return self.select(0);
+        }
+        self.select(next)?;
+        self.play()
     }
 
     pub fn play(&mut self) -> Result<(), String> {

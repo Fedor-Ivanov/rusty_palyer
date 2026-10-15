@@ -2,7 +2,9 @@ mod app;
 mod audio;
 mod metadata;
 mod player;
+mod theme;
 mod track;
+mod ui;
 mod utils;
 
 use eframe::egui;
@@ -10,8 +12,8 @@ use eframe::egui;
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([420.0, 320.0])
-            .with_min_inner_size([320.0, 260.0]),
+            .with_inner_size([640.0, 480.0])
+            .with_min_inner_size([420.0, 320.0]),
         ..Default::default()
     };
 

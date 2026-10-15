@@ -1,29 +1,22 @@
 use eframe::egui::{
-    self, Align2, Color32, CornerRadius, CursorIcon, FontId, Pos2, Rect, RichText, Sense, Shape,
-    Stroke, TextureHandle, Ui, pos2, vec2,
+    self, Align, Align2, Color32, CornerRadius, CursorIcon, FontId, Label, Layout, Pos2, Rect,
+    RichText, Sense, Ui, pos2, vec2,
 };
-use std::{
-    hash::{DefaultHasher, Hash, Hasher},
-    time::Duration,
-};
+use std::time::Duration;
 
+use crate::theme::{BG, FG, RED, TRACK};
 use crate::{
     metadata::SUPPORTED_EXTENSIONS,
     player::{PlayerController, PlayerState},
     track::Track,
-    utils::format_secs,
+    ui,
+    utils::{format_secs, paint_play_pause},
 };
-
-const BG: Color32 = Color32::from_rgb(201, 242, 224); // mint
-const FG: Color32 = Color32::from_rgb(16, 53, 38); // ink
-const TRACK: Color32 = Color32::from_rgb(183, 223, 205); // mint + 10% ink
-const RED: Color32 = Color32::from_rgb(239, 68, 68);
 
 const PLAY_BUTTON_SIZE: f32 = 64.0;
 const PLAY_MORPH_SECS: f32 = 0.25;
 const SLIDER_TRACK_HEIGHT: f32 = 5.0;
 const SLIDER_THUMB_RADIUS: f32 = 8.0;
-const COVER_MAX_SIZE: f32 = 120.0;
 
 pub struct PlayerApp {
     controller: PlayerController,
@@ -45,17 +38,39 @@ impl PlayerApp {
         self.error = result.err();
     }
 
-    fn open_file(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
+    fn add_tracks(&mut self) {
+        let Some(paths) = rfd::FileDialog::new()
             .add_filter("Audio", SUPPORTED_EXTENSIONS)
-            .pick_file()
+            .pick_files()
         else {
             // Пользователь закрыл диалог: оставляем текущий трек
             return;
         };
 
-        let result = Track::from_path(path).and_then(|track| self.controller.set_track(track));
-        self.set_result(result);
+        // Неподходящие файлы пропускаем, остальные всё равно открываем
+        let mut tracks = Vec::new();
+        let mut errors = Vec::new();
+        for path in paths {
+            let name = path
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .into_owned();
+            match Track::from_path(path) {
+                Ok(track) => tracks.push(track),
+                Err(e) => errors.push(format!("{name}: {e}")),
+            }
+        }
+
+        // В очередь идут все треки, первый из них становится текущим
+        if !tracks.is_empty() {
+            self.controller.set_list(tracks);
+            if let Err(e) = self.controller.select(0) {
+                errors.push(e);
+            }
+        }
+
+        self.error = (!errors.is_empty()).then(|| errors.join("\n"));
     }
 
     fn toggle_play(&mut self) {
@@ -67,7 +82,7 @@ impl PlayerApp {
         self.set_result(result);
     }
 
-    fn header(&mut self, ui: &mut Ui) {
+    fn render_header(&mut self, ui: &mut Ui) {
         ui.vertical_centered(|ui| {
             let open =
                 egui::Button::new(RichText::new("Open file").size(18.0).color(FG)).frame(false);
@@ -76,7 +91,7 @@ impl PlayerApp {
                 .on_hover_cursor(CursorIcon::PointingHand)
                 .clicked()
             {
-                self.open_file();
+                self.add_tracks();
             }
 
             // Временно показываем состояние плеера, чтобы видеть, что он реагирует на кнопки
@@ -89,7 +104,7 @@ impl PlayerApp {
         });
     }
 
-    fn current_track_info(&mut self, ui: &mut Ui) {
+    fn render_current_track_info(&mut self, ui: &mut Ui) {
         ui.vertical(|ui| {
             if let Some(track) = &self.controller.player().current_track {
                 ui.add_space(8.0);
@@ -100,71 +115,12 @@ impl PlayerApp {
                 }
                 ui.add_space(8.0);
 
-                Self::album_cover(ui, track.album_cover.as_deref());
+                ui::render_album_cover(ui, track.album_cover.as_deref());
             }
         });
     }
 
-    fn album_cover(ui: &mut Ui, cover_data: Option<&[u8]>) {
-        if let Some(cover) = cover_data {
-            let cache_id = egui::Id::unique("album_cover");
-            let cover_hash = {
-                let mut hasher = DefaultHasher::new();
-                cover.hash(&mut hasher);
-                hasher.finish()
-            };
-            let cached = ui
-                .ctx()
-                .data(|data| data.get_temp::<(u64, TextureHandle)>(cache_id))
-                .filter(|(hash, _)| *hash == cover_hash)
-                .map(|(_, texture)| texture);
-
-            let texture = match cached {
-                Some(texture) => texture,
-                None => {
-                    let Ok(image) = image::load_from_memory(cover) else {
-                        return;
-                    };
-                    let image = image.to_rgba8();
-                    let size = [image.width() as usize, image.height() as usize];
-                    let texture = ui.ctx().load_texture(
-                        "album_cover",
-                        egui::ColorImage::from_rgba_unmultiplied(size, image.as_raw()),
-                        egui::TextureOptions::LINEAR,
-                    );
-                    ui.ctx().data_mut(|data| {
-                        data.insert_temp(cache_id, (cover_hash, texture.clone()));
-                    });
-                    texture
-                }
-            };
-
-            let size = texture.size_vec2();
-            let max_size = vec2(ui.available_width(), COVER_MAX_SIZE);
-            let scale = (max_size / size).min_elem().min(1.0);
-            ui.image((texture.id(), size * scale));
-        } else {
-            // Временная заглушка: квадрат с виниловой пластинкой
-            let side = ui.available_width().min(COVER_MAX_SIZE);
-            let (rect, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
-            let painter = ui.painter();
-            painter.rect_filled(rect, CornerRadius::same(8), TRACK);
-
-            // Размеры — доли стороны квадрата
-            let center = rect.center();
-            let r = |fraction: f32| side * fraction;
-            let groove = Stroke::new(1.0, FG.gamma_multiply(0.15));
-            painter.circle_filled(center, r(0.42), BG);
-            painter.circle_stroke(center, r(0.42), groove);
-            for fraction in [0.37, 0.32, 0.27, 0.22] {
-                painter.circle_stroke(center, r(fraction), groove);
-            }
-            painter.circle_filled(center, r(0.14), FG.gamma_multiply(0.15));
-            painter.circle_filled(center, r(0.025).max(2.0), BG);
-        }
-    }
-
-    fn controls(&mut self, ui: &mut Ui) {
+    fn render_controls(&mut self, ui: &mut Ui) {
         let player = self.controller.player();
         let has_track = player.current_track.is_some();
         let playing = player.state == PlayerState::Playing;
@@ -226,10 +182,10 @@ impl PlayerApp {
         }
 
         ui.add_space(1.0);
-        self.progress_bar(ui, position, duration, has_track && duration > 0.0);
+        self.render_progress_bar(ui, position, duration, has_track && duration > 0.0);
     }
 
-    fn progress_bar(&mut self, ui: &mut Ui, position: f32, duration: f32, enabled: bool) {
+    fn render_progress_bar(&mut self, ui: &mut Ui, position: f32, duration: f32, enabled: bool) {
         let sense = if enabled {
             Sense::click_and_drag()
         } else {
@@ -285,117 +241,107 @@ impl PlayerApp {
         );
         painter.circle_filled(pos2(thumb_x, rect.center().y), SLIDER_THUMB_RADIUS, FG);
     }
+
+    fn render_list(&mut self, ui: &mut Ui) {
+        // Пока `list` заимствован, менять плеер нельзя — запоминаем клик и обрабатываем после цикла
+        let mut clicked = None;
+        let current = self.controller.player().current_index;
+
+        ui.vertical(|ui| {
+            ui.label(RichText::new("List"));
+
+            for (index, track) in self.controller.player().list.iter().enumerate() {
+                // Текущий трек подсвечиваем фоном
+                let fill = if current == Some(index) {
+                    BG
+                } else {
+                    Color32::TRANSPARENT
+                };
+                let row = egui::Frame::new()
+                    .fill(fill)
+                    .corner_radius(6)
+                    .inner_margin(4.0)
+                    .show(ui, |ui| {
+                        // Аналог justify-content: space-between: время прижато вправо,
+                        // название занимает оставшееся место слева и обрезается с «…»
+                        ui.horizontal(|ui| {
+                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                let duration = format_secs(track.duration_secs as f32);
+                                let duration = RichText::new(duration).size(14.0).color(FG);
+                                ui.add(Label::new(duration).selectable(false));
+
+                                ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+                                    let title = if track.artist.is_empty() {
+                                        track.title.clone()
+                                    } else {
+                                        format!("{} — {}", track.title, track.artist)
+                                    };
+                                    let title = RichText::new(title).size(14.0).color(FG);
+                                    ui.add(Label::new(title).selectable(false).truncate());
+                                });
+                            });
+                        });
+                    })
+                    .response
+                    .interact(Sense::click())
+                    .on_hover_cursor(CursorIcon::PointingHand);
+
+                if row.clicked() {
+                    clicked = Some(index);
+                }
+            }
+        });
+
+        if let Some(index) = clicked {
+            let result = self
+                .controller
+                .select(index)
+                .and_then(|()| self.controller.play());
+            self.set_result(result);
+        }
+    }
 }
 
 impl eframe::App for PlayerApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
-        self.controller.poll_events();
+        // Трек доиграл — переходим к следующему в очереди
+        if self.controller.poll_events()
+            && let Err(e) = self.controller.play_next()
+        {
+            self.error = Some(e);
+        }
 
         // Пока трек играет, обновляем время и ползунок
         if self.controller.player().state == PlayerState::Playing {
             ui.ctx().request_repaint_after(Duration::from_millis(100));
         }
 
+        let list_frame = egui::Frame::new().fill(TRACK).inner_margin(16.0);
+        egui::Panel::left("list")
+            .frame(list_frame)
+            .default_size(200.0)
+            .size_range(150.0..=400.0)
+            .resizable(true)
+            .show_separator_line(false)
+            .show(ui, |ui| {
+                // Panel подгоняет ширину под содержимое, поэтому без этого она сжимается
+                // обратно до минимума сразу после перетаскивания края
+                ui.set_min_width(ui.available_width());
+                self.render_list(ui);
+            });
+
         let frame = egui::Frame::central_panel(ui.style())
             .fill(BG)
             .inner_margin(16);
 
         egui::CentralPanel::default().frame(frame).show(ui, |ui| {
-            self.header(ui);
-            ui.add_space(8.0);
-            self.current_track_info(ui);
-            ui.add_space(16.0);
-            self.controls(ui);
+            ui.vertical_centered_justified(|ui| {
+                self.render_header(ui);
+                ui.add_space(8.0);
+                self.render_current_track_info(ui);
+                ui.add_space(16.0);
+                self.render_controls(ui);
+            })
         });
     }
-}
-
-// Иконки в координатах 24×24. Каждая фигура задана внутренним контуром и радиусом:
-// итоговая форма — контур, раздутый на радиус, так что углы получаются скруглёнными.
-// Треугольник play разрезан по вертикали на две половины, каждая — четырёхугольник,
-// вершины которого попарно переходят в вершины полоски pause.
-const PLAY_TRIANGLE: [(f32, f32); 3] = [(8.0, 6.5), (17.5, 12.0), (8.0, 17.5)];
-const PLAY_HALVES: [[(f32, f32); 4]; 2] = [
-    [(8.0, 6.5), (12.75, 9.25), (12.75, 14.75), (8.0, 17.5)],
-    [(12.75, 9.25), (17.5, 12.0), (17.5, 12.0), (12.75, 14.75)],
-];
-const PAUSE_BARS: [[(f32, f32); 4]; 2] = [
-    [(7.0, 6.0), (9.0, 6.0), (9.0, 18.0), (7.0, 18.0)],
-    [(15.0, 6.0), (17.0, 6.0), (17.0, 18.0), (15.0, 18.0)],
-];
-const PLAY_CORNER_RADIUS: f32 = 1.0;
-const PAUSE_CORNER_RADIUS: f32 = 1.0;
-
-/// `morph`: 0.0 — play, 1.0 — pause, между ними — промежуточная форма
-fn paint_play_pause(ui: &Ui, rect: Rect, morph: f32, disabled: bool, hovered: bool) {
-    let alpha = if disabled { 0.4 } else { 1.0 };
-    let icon_color = FG.gamma_multiply(alpha);
-    let bg_opacity = if hovered && !disabled { 0.25 } else { 0.18 };
-
-    let painter = ui.painter();
-    painter.circle_filled(
-        rect.center(),
-        rect.width() / 2.0,
-        FG.gamma_multiply(bg_opacity * alpha),
-    );
-
-    let scale = rect.width() / 24.0;
-    let p = |(x, y): (f32, f32)| rect.min + vec2(x, y) * scale;
-    let fill = |points: Vec<Pos2>, radius: f32| {
-        let outline = rounded_convex(&points, radius * scale);
-        painter.add(Shape::convex_polygon(outline, icon_color, Stroke::NONE));
-    };
-
-    if morph <= 0.0 {
-        // Целиком, а не половинками: иначе на полупрозрачной иконке видно их наложение
-        fill(PLAY_TRIANGLE.map(p).to_vec(), PLAY_CORNER_RADIUS);
-    } else {
-        let radius = egui::lerp(PLAY_CORNER_RADIUS..=PAUSE_CORNER_RADIUS, morph);
-        for (from, to) in PLAY_HALVES.iter().zip(&PAUSE_BARS) {
-            let points = from
-                .iter()
-                .zip(to)
-                .map(|(&a, &b)| p(a).lerp(p(b), morph))
-                .collect();
-            fill(points, radius);
-        }
-    }
-}
-
-/// Контур выпуклого многоугольника, раздутого на `radius`: выпуклая оболочка
-/// кругов вокруг вершин. Совпадающие вершины допустимы.
-fn rounded_convex(points: &[Pos2], radius: f32) -> Vec<Pos2> {
-    const ARC_SEGMENTS: usize = 16;
-
-    let mut samples: Vec<Pos2> = points
-        .iter()
-        .flat_map(|&center| {
-            (0..ARC_SEGMENTS).map(move |i| {
-                let angle = i as f32 / ARC_SEGMENTS as f32 * std::f32::consts::TAU;
-                center + radius * egui::Vec2::angled(angle)
-            })
-        })
-        .collect();
-    samples.sort_by(|a, b| a.x.total_cmp(&b.x).then(a.y.total_cmp(&b.y)));
-
-    // Выпуклая оболочка (монотонная цепочка Эндрю): нижняя цепочка, затем верхняя
-    let cross = |o: Pos2, a: Pos2, b: Pos2| (a - o).x * (b - o).y - (a - o).y * (b - o).x;
-    let mut hull: Vec<Pos2> = Vec::with_capacity(samples.len() + 1);
-    for point in samples.iter().copied() {
-        while hull.len() >= 2 && cross(hull[hull.len() - 2], hull[hull.len() - 1], point) <= 0.0 {
-            hull.pop();
-        }
-        hull.push(point);
-    }
-    let lower_len = hull.len() + 1;
-    for point in samples.iter().rev().skip(1).copied() {
-        while hull.len() >= lower_len
-            && cross(hull[hull.len() - 2], hull[hull.len() - 1], point) <= 0.0
-        {
-            hull.pop();
-        }
-        hull.push(point);
-    }
-    hull.pop();
-    hull
 }
