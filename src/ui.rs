@@ -1,9 +1,12 @@
-use eframe::egui::{self, CornerRadius, Sense, Stroke, TextureHandle, Ui, vec2};
+use eframe::egui::{
+    self, CornerRadius, CursorIcon, Pos2, Rect, Response, Sense, Stroke, TextureHandle, Ui, vec2,
+};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use crate::theme::{BG, FG, TRACK};
+use crate::theme::{GRAY_1, GRAY_2, GRAY_3, GRAY_4, GRAY_5};
 
-const COVER_MAX_SIZE: f32 = 120.0;
+const COVER_MAX_SIZE: f32 = 180.0;
+pub const HOVER_FADE_SECS: f32 = 0.15;
 
 pub fn render_album_cover(ui: &mut Ui, cover_data: Option<&[u8]>) {
     if let Some(cover) = cover_data {
@@ -48,18 +51,72 @@ pub fn render_album_cover(ui: &mut Ui, cover_data: Option<&[u8]>) {
         let side = ui.available_width().min(COVER_MAX_SIZE);
         let (rect, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
         let painter = ui.painter();
-        painter.rect_filled(rect, CornerRadius::same(8), TRACK);
+        painter.rect_filled(rect, CornerRadius::same(8), GRAY_1);
 
         // Размеры — доли стороны квадрата
         let center = rect.center();
         let r = |fraction: f32| side * fraction;
-        let groove = Stroke::new(1.0, FG.gamma_multiply(0.15));
-        painter.circle_filled(center, r(0.42), BG);
+        let groove = Stroke::new(1.0, GRAY_3.gamma_multiply(0.15));
+        painter.circle_filled(center, r(0.42), GRAY_4);
         painter.circle_stroke(center, r(0.42), groove);
         for fraction in [0.37, 0.32, 0.27, 0.22] {
             painter.circle_stroke(center, r(fraction), groove);
         }
-        painter.circle_filled(center, r(0.14), FG.gamma_multiply(0.15));
-        painter.circle_filled(center, r(0.025).max(2.0), BG);
+        painter.circle_filled(center, r(0.14), GRAY_3.gamma_multiply(0.15));
+        painter.circle_filled(center, r(0.025).max(2.0), GRAY_4);
+    }
+}
+
+/// Форма области, в которой кнопка реагирует на курсор
+pub enum HitShape {
+    Rect,
+    /// Круг, вписанный в прямоугольник кнопки
+    Circle,
+}
+
+pub struct IconButton {
+    pub response: Response,
+    pub clicked: bool,
+    /// Плавный hover для отрисовки: 0.0 — без наведения, 1.0 — наведено
+    pub hover: f32,
+}
+
+/// Кнопка-иконка: клик, курсор-рука и плавный hover — только внутри `shape`
+pub fn icon_button(
+    ui: &mut Ui,
+    rect: Rect,
+    shape: HitShape,
+    id_salt: &str,
+    enabled: bool,
+) -> IconButton {
+    let sense = if enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let response = ui.interact(rect, ui.scope_id().with(id_salt), sense);
+
+    // egui проверяет попадание по прямоугольнику, круг уточняем сами
+    let inside = |pos: Pos2| match shape {
+        HitShape::Rect => true,
+        HitShape::Circle => pos.distance(rect.center()) <= rect.width() / 2.0,
+    };
+    let hovered = enabled && response.hover_pos().is_some_and(inside);
+    let clicked = response.clicked() && response.interact_pointer_pos().is_some_and(inside);
+
+    if hovered {
+        ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+    }
+    let hover = ui.ctx().animate_bool_with_time_and_easing(
+        response.id.with("hover"),
+        hovered,
+        HOVER_FADE_SECS,
+        egui::emath::easing::cubic_out,
+    );
+
+    IconButton {
+        response,
+        clicked,
+        hover,
     }
 }

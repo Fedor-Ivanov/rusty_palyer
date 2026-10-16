@@ -25,8 +25,8 @@ pub enum PlayerState {
 pub struct Player {
     pub current_track: Option<Track>,
     pub state: PlayerState,
-    pub list: VecDeque<Track>,
-    /// Позиция `current_track` в `list`
+    pub track_list: VecDeque<Track>,
+    /// Позиция `current_track` в `track_list`
     pub current_index: Option<usize>,
 }
 
@@ -35,7 +35,7 @@ impl Default for Player {
         Self {
             current_track: None,
             state: PlayerState::Stopped,
-            list: VecDeque::new(),
+            track_list: VecDeque::new(),
             current_index: None,
         }
     }
@@ -115,17 +115,16 @@ impl PlayerController {
         Ok(())
     }
 
-    /// Заменяет список треков. Текущий трек не меняется — его выбирают через `select`.
-    pub fn set_list(&mut self, tracks: impl IntoIterator<Item = Track>) {
-        self.player.list = tracks.into_iter().collect();
-        self.player.current_index = None;
+    /// Добавляет треки в конец списка. Текущий трек и воспроизведение не меняются.
+    pub fn append_tracks(&mut self, tracks: impl IntoIterator<Item = Track>) {
+        self.player.track_list.extend(tracks);
     }
 
     /// Делает текущим трек из списка по его позиции.
     pub fn select(&mut self, index: usize) -> Result<(), String> {
         let track = self
             .player
-            .list
+            .track_list
             .get(index)
             .cloned()
             .ok_or("Трека с таким номером нет в списке")?;
@@ -137,15 +136,55 @@ impl PlayerController {
     /// Запускает трек, следующий за текущим в списке. Если текущий — последний,
     /// делает текущим первый трек списка, но не запускает его.
     pub fn play_next(&mut self) -> Result<(), String> {
-        if self.player.list.is_empty() {
+        if self.player.track_list.is_empty() {
             return Ok(());
         }
         let next = self.player.current_index.map_or(0, |index| index + 1);
-        if next >= self.player.list.len() {
+        if next >= self.player.track_list.len() {
             return self.select(0);
         }
         self.select(next)?;
         self.play()
+    }
+
+    /// Кнопка «вперёд»: следующий трек списка, после последнего — первый.
+    /// Если трек играл, новый тоже запускается.
+    pub fn skip_next(&mut self) -> Result<(), String> {
+        let len = self.player.track_list.len();
+        if len == 0 {
+            return Ok(());
+        }
+        let next = self
+            .player
+            .current_index
+            .map_or(0, |index| (index + 1) % len);
+        self.switch_to(next)
+    }
+
+    /// Кнопка «назад»: если трек играет дольше нескольких секунд, возвращает в его
+    /// начало (как в большинстве плееров), иначе — предыдущий трек, перед первым — последний.
+    pub fn skip_prev(&mut self) -> Result<(), String> {
+        const RESTART_THRESHOLD_MS: u64 = 3000;
+
+        let len = self.player.track_list.len();
+        if len == 0 {
+            return Ok(());
+        }
+        if self.player.current_index.is_some() && self.position_ms() > RESTART_THRESHOLD_MS {
+            return self.seek(0);
+        }
+        let prev = self
+            .player
+            .current_index
+            .map_or(0, |index| (index + len - 1) % len);
+        self.switch_to(prev)
+    }
+
+    /// Переключает на трек, сохраняя состояние: играло — играет и новый
+    fn switch_to(&mut self, index: usize) -> Result<(), String> {
+        let was_playing = self.player.state == PlayerState::Playing;
+        self.select(index)?;
+        if was_playing { self.play() } else { Ok(()) }
     }
 
     pub fn play(&mut self) -> Result<(), String> {

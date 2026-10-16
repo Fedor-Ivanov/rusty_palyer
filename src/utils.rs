@@ -1,5 +1,5 @@
-use crate::theme::FG;
-use eframe::egui::{self, Pos2, Rect, Shape, Stroke, Ui, vec2};
+use crate::theme::{GRAY_1, GRAY_4, GRAY_5};
+use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
 
 /// Секунды в `мм:сс` или `чч:мм:сс`.
 pub fn format_secs(seconds: f32) -> String {
@@ -66,39 +66,133 @@ const PAUSE_BARS: [[(f32, f32); 4]; 2] = [
 ];
 const PLAY_CORNER_RADIUS: f32 = 1.0;
 const PAUSE_CORNER_RADIUS: f32 = 1.0;
+/// Непрозрачность круга под иконкой (поверх `GRAY_4`): в покое и при наведении
+const PLAY_BG_OPACITY: f32 = 0.18;
+const PLAY_BG_HOVER_OPACITY: f32 = 0.25;
 
-/// `morph`: 0.0 — play, 1.0 — pause, между ними — промежуточная форма
-pub fn paint_play_pause(ui: &Ui, rect: Rect, morph: f32, disabled: bool, hovered: bool) {
+// Иконка «следующий трек»: два треугольника и тонкая полоска. «Предыдущий» — её зеркальное
+// отражение. Между фигурами есть зазор, чтобы на полупрозрачной иконке не было видно наложения.
+const SKIP_TRIANGLES: [[(f32, f32); 3]; 2] = [
+    [(3.5, 7.0), (9.5, 12.0), (3.5, 17.0)],
+    [(12.0, 7.0), (18.0, 12.0), (12.0, 17.0)],
+];
+// Полоска — отрезок, раздутый на радиус скругления, поэтому её толщина — 2 × радиус
+const SKIP_BAR: [(f32, f32); 2] = [(20.5, 7.0), (20.5, 17.0)];
+const SKIP_CORNER_RADIUS: f32 = 1.0;
+/// Запас вокруг иконки prev/next, в котором она ещё реагирует на курсор, в точках экрана
+const SKIP_HIT_PADDING: f32 = 4.0;
+
+// Иконка «+»: два отрезка, раздутых на радиус скругления
+const ADD_BARS: [[(f32, f32); 2]; 2] = [[(8.0, 12.0), (16.0, 12.0)], [(12.0, 8.0), (12.0, 16.0)]];
+const ADD_CORNER_RADIUS: f32 = 1.0;
+/// Непрозрачность тёмного круга под «+» при наведении; в покое круга нет
+const ADD_BG_HOVER_OPACITY: f32 = 0.6;
+
+/// Круг-подложка круглой кнопки. Возвращает цвет, которым рисовать иконку.
+fn paint_button_bg(ui: &Ui, rect: Rect, disabled: bool, hover: f32) -> Color32 {
     let alpha = if disabled { 0.4 } else { 1.0 };
-    let icon_color = FG.gamma_multiply(alpha);
-    let bg_opacity = if hovered && !disabled { 0.25 } else { 0.18 };
-
-    let painter = ui.painter();
-    painter.circle_filled(
+    let bg_opacity = egui::lerp(PLAY_BG_OPACITY..=PLAY_BG_HOVER_OPACITY, hover);
+    ui.painter().circle_filled(
         rect.center(),
         rect.width() / 2.0,
-        FG.gamma_multiply(bg_opacity * alpha),
+        GRAY_4.gamma_multiply(bg_opacity * alpha),
     );
+    GRAY_4.gamma_multiply(alpha)
+}
 
+/// Заливает фигуру, заданную в координатах иконки 24×24, со скруглением `radius`
+fn fill_icon_shape(ui: &Ui, rect: Rect, points: &[Pos2], radius: f32, color: Color32) {
     let scale = rect.width() / 24.0;
-    let p = |(x, y): (f32, f32)| rect.min + vec2(x, y) * scale;
-    let fill = |points: Vec<Pos2>, radius: f32| {
-        let outline = rounded_convex(&points, radius * scale);
-        painter.add(Shape::convex_polygon(outline, icon_color, Stroke::NONE));
-    };
+    let points: Vec<Pos2> = points
+        .iter()
+        .map(|p| rect.min + p.to_vec2() * scale)
+        .collect();
+    let outline = rounded_convex(&points, radius * scale);
+    ui.painter()
+        .add(Shape::convex_polygon(outline, color, Stroke::NONE));
+}
+
+/// `morph`: 0.0 — play, 1.0 — pause, между ними — промежуточная форма.
+/// `hover`: 0.0 — без наведения, 1.0 — наведено, между ними — переход.
+pub fn paint_play_pause(ui: &Ui, rect: Rect, morph: f32, disabled: bool, hover: f32) {
+    let icon_color = paint_button_bg(ui, rect, disabled, hover);
 
     if morph <= 0.0 {
         // Целиком, а не половинками: иначе на полупрозрачной иконке видно их наложение
-        fill(PLAY_TRIANGLE.map(p).to_vec(), PLAY_CORNER_RADIUS);
+        let triangle = PLAY_TRIANGLE.map(|(x, y)| pos2(x, y));
+        fill_icon_shape(ui, rect, &triangle, PLAY_CORNER_RADIUS, icon_color);
     } else {
         let radius = egui::lerp(PLAY_CORNER_RADIUS..=PAUSE_CORNER_RADIUS, morph);
         for (from, to) in PLAY_HALVES.iter().zip(&PAUSE_BARS) {
-            let points = from
+            let points: Vec<Pos2> = from
                 .iter()
                 .zip(to)
-                .map(|(&a, &b)| p(a).lerp(p(b), morph))
+                .map(|(&(ax, ay), &(bx, by))| pos2(ax, ay).lerp(pos2(bx, by), morph))
                 .collect();
-            fill(points, radius);
+            fill_icon_shape(ui, rect, &points, radius, icon_color);
         }
+    }
+}
+
+/// Кнопка «следующий трек» (`forward`) или «предыдущий». Без круга-подложки:
+/// при наведении иконка плавно темнеет.
+/// `hover`: 0.0 — без наведения, 1.0 — наведено, между ними — переход.
+pub fn paint_skip(ui: &Ui, rect: Rect, forward: bool, disabled: bool, hover: f32) {
+    let alpha = if disabled { 0.4 } else { 1.0 };
+    let icon_color = GRAY_4.lerp_to_gamma(GRAY_5, hover).gamma_multiply(alpha);
+
+    // «Назад» — зеркальное отражение «вперёд» по горизонтали
+    let point = |(x, y): (f32, f32)| {
+        if forward {
+            pos2(x, y)
+        } else {
+            pos2(24.0 - x, y)
+        }
+    };
+    for triangle in SKIP_TRIANGLES {
+        fill_icon_shape(
+            ui,
+            rect,
+            &triangle.map(point),
+            SKIP_CORNER_RADIUS,
+            icon_color,
+        );
+    }
+    fill_icon_shape(
+        ui,
+        rect,
+        &SKIP_BAR.map(point),
+        SKIP_CORNER_RADIUS,
+        icon_color,
+    );
+}
+
+/// Область, в которой кнопка prev/next реагирует на курсор: контур иконки
+/// с небольшим запасом. Иконка симметрична, поэтому область одна для обеих кнопок.
+pub fn skip_hit_rect(rect: Rect) -> Rect {
+    let scale = rect.width() / 24.0;
+    let points = SKIP_TRIANGLES
+        .iter()
+        .flatten()
+        .chain(&SKIP_BAR)
+        .map(|&(x, y)| rect.min + vec2(x, y) * scale);
+    Rect::from_points(&points.collect::<Vec<_>>())
+        .expand(SKIP_CORNER_RADIUS * scale + SKIP_HIT_PADDING)
+}
+
+/// Кнопка «+» в заголовке списка: светлый плюс, при наведении под ним плавно
+/// проявляется тёмный круг. Подложка как у play
+/// здесь не годится: она того же цвета, что фон панели (`GRAY_4`), и не была бы видна.
+/// `hover`: 0.0 — без наведения, 1.0 — наведено, между ними — переход.
+pub fn paint_add(ui: &Ui, rect: Rect, hover: f32) {
+    let bg_opacity = ADD_BG_HOVER_OPACITY * hover;
+    ui.painter().circle_filled(
+        rect.center(),
+        rect.width() / 2.0,
+        GRAY_5.gamma_multiply(bg_opacity),
+    );
+    for bar in ADD_BARS {
+        let points = bar.map(|(x, y)| pos2(x, y));
+        fill_icon_shape(ui, rect, &points, ADD_CORNER_RADIUS, GRAY_1);
     }
 }
