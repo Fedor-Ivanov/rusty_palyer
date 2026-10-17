@@ -7,21 +7,25 @@ use std::time::Duration;
 use crate::theme::{GRAY_1, GRAY_2, GRAY_3, GRAY_4, GRAY_5, RED};
 use crate::{
     metadata::SUPPORTED_EXTENSIONS,
-    player::{PlayerController, PlayerState},
+    player::{PlayerController, PlayerState, RepeatMode},
     track::Track,
-    ui,
-    utils::{format_secs, paint_add, paint_play_pause, paint_skip, skip_hit_rect},
+    ui_components,
+    utils::{
+        format_secs, paint_add, paint_play_pause, paint_repeat, paint_shuffle, paint_skip,
+        skip_hit_rect,
+    },
 };
 
 const PLAY_BUTTON_SIZE: f32 = 60.0;
 const PLAY_MORPH_SECS: f32 = 0.25;
 const ADD_BUTTON_SIZE: f32 = 24.0;
+// Зазор между кнопками повтора в нижнем блоке списка
+const REPEAT_BUTTON_GAP: f32 = 4.0;
 // Непрозрачность тёмной подложки под неактивным треком при наведении
 const TRACK_HOVER_DARKEN: f32 = 0.35;
 // Отступ между строками списка треков
 const TRACK_ROW_GAP: f32 = 6.0;
 // Длительность перехода, когда трек становится активным или перестаёт им быть
-const TRACK_ACTIVE_FADE_SECS: f32 = 0.2;
 const SKIP_BUTTON_SIZE: f32 = 40.0;
 // Зазор между кнопкой play и кнопками prev/next
 const SKIP_BUTTON_GAP: f32 = 4.0;
@@ -144,7 +148,7 @@ impl PlayerApp {
                 ui.add_space(8.0);
 
                 ui.vertical_centered(|ui| {
-                    ui::render_album_cover(ui, track.album_cover.as_deref());
+                    ui_components::render_album_cover(ui, track.album_cover.as_deref());
                 });
             }
         });
@@ -202,17 +206,23 @@ impl PlayerApp {
         let next_rect = Rect::from_center_size(row.center() + skip_offset, skip_size);
 
         // prev/next реагируют только на контур иконки, а не на весь квадрат вокруг неё
-        let prev = ui::icon_button(
+        let prev = ui_components::icon_button(
             ui,
             skip_hit_rect(prev_rect),
-            ui::HitShape::Rect,
+            ui_components::HitShape::Rect,
             "prev",
             has_track,
         );
         paint_skip(ui, prev_rect, false, !has_track, prev.hover);
 
         // У play чёткий круг, поэтому и наведение считаем только внутри него
-        let play = ui::icon_button(ui, play_rect, ui::HitShape::Circle, "play_pause", has_track);
+        let play = ui_components::icon_button(
+            ui,
+            play_rect,
+            ui_components::HitShape::Circle,
+            "play_pause",
+            has_track,
+        );
         // 0.0 — треугольник play, 1.0 — полоски pause
         let morph = ui.ctx().animate_bool_with_time_and_easing(
             play.response.id,
@@ -222,10 +232,10 @@ impl PlayerApp {
         );
         paint_play_pause(ui, play_rect, morph, !has_track, play.hover);
 
-        let next = ui::icon_button(
+        let next = ui_components::icon_button(
             ui,
             skip_hit_rect(next_rect),
-            ui::HitShape::Rect,
+            ui_components::HitShape::Rect,
             "next",
             has_track,
         );
@@ -304,6 +314,42 @@ impl PlayerApp {
         painter.circle_filled(pos2(thumb_x, rect.center().y), SLIDER_THUMB_RADIUS, GRAY_4);
     }
 
+    /// Нижний блок списка: слева shuffle, справа две кнопки повтора
+    fn render_playback_modes(&mut self, ui: &mut Ui) {
+        let list = &self.controller.player().track_list;
+        let (shuffle, repeat) = (list.shuffle, list.repeat);
+        let size = vec2(ADD_BUTTON_SIZE, ADD_BUTTON_SIZE);
+
+        ui.horizontal(|ui| {
+            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+            let (clicked, active, hover) =
+                ui_components::toggle_button(ui, rect, "shuffle", shuffle, "Shuffle");
+            paint_shuffle(ui, rect, active, hover);
+            if clicked {
+                self.controller.toggle_shuffle();
+            }
+
+            // Повторы прижаты вправо. Включена может быть только одна из кнопок —
+            // это обеспечивает сам RepeatMode
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = REPEAT_BUTTON_GAP;
+                // В right_to_left первой добавляется самая правая кнопка
+                for (mode, id_salt, tooltip) in [
+                    (RepeatMode::All, "repeat_all", "Repeat all"),
+                    (RepeatMode::One, "repeat_one", "Repeat one"),
+                ] {
+                    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+                    let (clicked, active, hover) =
+                        ui_components::toggle_button(ui, rect, id_salt, repeat == mode, tooltip);
+                    paint_repeat(ui, rect, mode == RepeatMode::One, active, hover);
+                    if clicked {
+                        self.controller.toggle_repeat(mode);
+                    }
+                }
+            });
+        });
+    }
+
     fn render_track_list(&mut self, ui: &mut Ui) {
         // Пока `track_list` заимствован, менять плеер нельзя — запоминаем клик и обрабатываем после цикла
         let mut clicked = None;
@@ -324,7 +370,13 @@ impl PlayerApp {
                 pos2(row.right() - ADD_BUTTON_SIZE / 2.0, row.center().y),
                 vec2(ADD_BUTTON_SIZE, ADD_BUTTON_SIZE),
             );
-            let add = ui::icon_button(ui, add_rect, ui::HitShape::Circle, "add_tracks", true);
+            let add = ui_components::icon_button(
+                ui,
+                add_rect,
+                ui_components::HitShape::Circle,
+                "add_tracks",
+                true,
+            );
             paint_add(ui, add_rect, add.hover);
             add.response.on_hover_text("Add tracks");
             if add.clicked {
@@ -375,7 +427,7 @@ impl PlayerApp {
                     let active = ui.ctx().animate_bool_with_time_and_easing(
                         row_id.with("active"),
                         is_current,
-                        TRACK_ACTIVE_FADE_SECS,
+                        ui_components::TRACK_ACTIVE_FADE_SECS,
                         egui::emath::easing::cubic_in_out,
                     );
                     let text_color = GRAY_1.lerp_to_gamma(GRAY_5, active);
@@ -416,7 +468,7 @@ impl PlayerApp {
                     let hover = ui.ctx().animate_bool_with_time_and_easing(
                         row_id.with("hover"),
                         row.hovered() && !is_current,
-                        ui::HOVER_FADE_SECS,
+                        ui_components::HOVER_FADE_SECS,
                         egui::emath::easing::cubic_out,
                     );
                     let hover_fill = GRAY_5.gamma_multiply(TRACK_HOVER_DARKEN * hover);
@@ -480,10 +532,7 @@ impl eframe::App for PlayerApp {
                     .resizable(false)
                     .show_separator_line(false)
                     .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            // Содержимое блока
-                            ui.label("text");
-                        });
+                        self.render_playback_modes(ui);
                     });
 
                 self.render_track_list(ui);

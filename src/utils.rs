@@ -1,4 +1,4 @@
-use crate::theme::{GRAY_1, GRAY_4, GRAY_5};
+use crate::theme::{GRAY_1, GRAY_3, GRAY_4, GRAY_5};
 use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
 
 /// Секунды в `мм:сс` или `чч:мм:сс`.
@@ -85,8 +85,34 @@ const SKIP_HIT_PADDING: f32 = 4.0;
 // Иконка «+»: два отрезка, раздутых на радиус скругления
 const ADD_BARS: [[(f32, f32); 2]; 2] = [[(8.0, 12.0), (16.0, 12.0)], [(12.0, 8.0), (12.0, 16.0)]];
 const ADD_CORNER_RADIUS: f32 = 1.0;
-/// Непрозрачность тёмного круга под «+» при наведении; в покое круга нет
-const ADD_BG_HOVER_OPACITY: f32 = 0.6;
+/// Непрозрачность тёмного круга под иконками панели списка при наведении; в покое круга нет
+const PANEL_ICON_HOVER_OPACITY: f32 = 0.6;
+
+// Иконки-переключатели (shuffle, repeat) нарисованы линиями толщиной ICON_STROKE
+// со стрелками-треугольниками на концах
+const ICON_STROKE: f32 = 2.0;
+const ARROW_CORNER_RADIUS: f32 = 0.5;
+// Shuffle: две перекрещенные линии, обе со стрелкой вправо
+const SHUFFLE_LINES: [[(f32, f32); 4]; 2] = [
+    [(4.0, 8.0), (8.0, 8.0), (15.0, 16.0), (17.0, 16.0)],
+    [(4.0, 16.0), (8.0, 16.0), (15.0, 8.0), (17.0, 8.0)],
+];
+const SHUFFLE_ARROWS: [[(f32, f32); 3]; 2] = [
+    [(17.0, 13.0), (20.0, 16.0), (17.0, 19.0)],
+    [(17.0, 5.0), (20.0, 8.0), (17.0, 11.0)],
+];
+// Repeat: петля из двух скоб — верхняя со стрелкой вправо, нижняя со стрелкой влево
+const REPEAT_LINES: [[(f32, f32); 3]; 2] = [
+    [(5.0, 12.0), (5.0, 8.0), (16.5, 8.0)],
+    [(19.0, 12.0), (19.0, 16.0), (7.5, 16.0)],
+];
+const REPEAT_ARROWS: [[(f32, f32); 3]; 2] = [
+    [(16.5, 5.0), (20.0, 8.0), (16.5, 11.0)],
+    [(7.5, 13.0), (4.0, 16.0), (7.5, 19.0)],
+];
+// «1» внутри петли для повтора одного трека — тоньше, чтобы поместиться
+const REPEAT_ONE_MARK: [(f32, f32); 3] = [(10.75, 11.25), (12.0, 10.0), (12.0, 14.0)];
+const REPEAT_ONE_STROKE: f32 = 1.5;
 
 /// Круг-подложка круглой кнопки. Возвращает цвет, которым рисовать иконку.
 fn paint_button_bg(ui: &Ui, rect: Rect, disabled: bool, hover: f32) -> Color32 {
@@ -180,19 +206,75 @@ pub fn skip_hit_rect(rect: Rect) -> Rect {
         .expand(SKIP_CORNER_RADIUS * scale + SKIP_HIT_PADDING)
 }
 
-/// Кнопка «+» в заголовке списка: светлый плюс, при наведении под ним плавно
-/// проявляется тёмный круг. Подложка как у play
-/// здесь не годится: она того же цвета, что фон панели (`GRAY_4`), и не была бы видна.
-/// `hover`: 0.0 — без наведения, 1.0 — наведено, между ними — переход.
-pub fn paint_add(ui: &Ui, rect: Rect, hover: f32) {
-    let bg_opacity = ADD_BG_HOVER_OPACITY * hover;
+/// Тёмный круг под иконкой в панели списка: плавно проявляется при наведении.
+/// Подложка как у play здесь не годится: она того же цвета, что фон панели
+/// (`GRAY_4`), и не была бы видна.
+fn paint_hover_circle(ui: &Ui, rect: Rect, hover: f32) {
     ui.painter().circle_filled(
         rect.center(),
         rect.width() / 2.0,
-        GRAY_5.gamma_multiply(bg_opacity),
+        GRAY_5.gamma_multiply(PANEL_ICON_HOVER_OPACITY * hover),
     );
+}
+
+/// Ломаная в координатах иконки 24×24 с круглыми концами
+fn stroke_icon_path(ui: &Ui, rect: Rect, points: &[(f32, f32)], width: f32, color: Color32) {
+    let scale = rect.width() / 24.0;
+    let points: Vec<Pos2> = points
+        .iter()
+        .map(|&(x, y)| rect.min + vec2(x, y) * scale)
+        .collect();
+    let stroke = Stroke::new(width * scale, color);
+    // egui рисует линии с прямыми торцами — скругляем их кругами
+    for end in [points[0], points[points.len() - 1]] {
+        ui.painter().circle_filled(end, stroke.width / 2.0, color);
+    }
+    ui.painter().add(Shape::line(points, stroke));
+}
+
+/// Цвет иконки-переключателя: выключен — приглушённый, включён — светлый
+fn toggle_color(active: f32) -> Color32 {
+    GRAY_3.lerp_to_gamma(GRAY_1, active)
+}
+
+/// Кнопка «+» в заголовке списка: светлый плюс, при наведении под ним плавно
+/// проявляется тёмный круг.
+/// `hover`: 0.0 — без наведения, 1.0 — наведено, между ними — переход.
+pub fn paint_add(ui: &Ui, rect: Rect, hover: f32) {
+    paint_hover_circle(ui, rect, hover);
     for bar in ADD_BARS {
         let points = bar.map(|(x, y)| pos2(x, y));
         fill_icon_shape(ui, rect, &points, ADD_CORNER_RADIUS, GRAY_1);
+    }
+}
+
+/// Переключатель случайного порядка.
+/// `active` и `hover`: 0.0..=1.0, плавные переходы включения и наведения.
+pub fn paint_shuffle(ui: &Ui, rect: Rect, active: f32, hover: f32) {
+    paint_hover_circle(ui, rect, hover);
+    let color = toggle_color(active);
+    for line in SHUFFLE_LINES {
+        stroke_icon_path(ui, rect, &line, ICON_STROKE, color);
+    }
+    for arrow in SHUFFLE_ARROWS {
+        let points = arrow.map(|(x, y)| pos2(x, y));
+        fill_icon_shape(ui, rect, &points, ARROW_CORNER_RADIUS, color);
+    }
+}
+
+/// Переключатель повтора: всего списка или, с `one`, одного трека (с «1» внутри петли).
+/// `active` и `hover`: 0.0..=1.0, плавные переходы включения и наведения.
+pub fn paint_repeat(ui: &Ui, rect: Rect, one: bool, active: f32, hover: f32) {
+    paint_hover_circle(ui, rect, hover);
+    let color = toggle_color(active);
+    for line in REPEAT_LINES {
+        stroke_icon_path(ui, rect, &line, ICON_STROKE, color);
+    }
+    for arrow in REPEAT_ARROWS {
+        let points = arrow.map(|(x, y)| pos2(x, y));
+        fill_icon_shape(ui, rect, &points, ARROW_CORNER_RADIUS, color);
+    }
+    if one {
+        stroke_icon_path(ui, rect, &REPEAT_ONE_MARK, REPEAT_ONE_STROKE, color);
     }
 }

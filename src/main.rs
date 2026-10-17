@@ -4,7 +4,7 @@ mod metadata;
 mod player;
 mod theme;
 mod track;
-mod ui;
+mod ui_components;
 mod utils;
 
 use eframe::egui;

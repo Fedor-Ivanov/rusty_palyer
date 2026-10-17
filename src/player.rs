@@ -21,10 +21,73 @@ pub enum PlayerState {
     Stopped,
 }
 
-#[derive(Serialize, Debug, Clone)]
+/// Режим повтора: включён может быть только один
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Default)]
+pub enum RepeatMode {
+    #[default]
+    Off,
+    /// Текущий трек по кругу
+    One,
+    /// Весь список по кругу
+    All,
+}
+
+#[derive(Serialize, Debug, Clone, Default)]
 pub struct TrackList {
     pub tracks: VecDeque<Track>,
     pub current_index: Option<usize>,
+    /// Случайный порядок воспроизведения
+    pub shuffle: bool,
+    pub repeat: RepeatMode,
+    /// Порядок воспроизведения при `shuffle`: перестановка индексов `tracks`.
+    /// Без `shuffle` треки идут по порядку, и этот список не используется
+    #[serde(skip)]
+    shuffle_order: Vec<usize>,
+}
+
+impl TrackList {
+    /// Порядок, в котором играют треки: перемешанный или обычный
+    fn play_order(&self) -> Vec<usize> {
+        if self.shuffle {
+            self.shuffle_order.clone()
+        } else {
+            (0..self.tracks.len()).collect()
+        }
+    }
+
+    /// Трек, который идёт после текущего (`step` = 1) или перед ним (`step` = -1).
+    /// На краю списка с `wrap` переходит на другой конец, без него — `None`.
+    fn neighbor(&self, step: isize, wrap: bool) -> Option<usize> {
+        let order = self.play_order();
+        let len = order.len() as isize;
+        if len == 0 {
+            return None;
+        }
+        let Some(position) = self
+            .current_index
+            .and_then(|current| order.iter().position(|&index| index == current))
+        else {
+            return order.first().copied();
+        };
+        let target = position as isize + step;
+        if (0..len).contains(&target) {
+            Some(order[target as usize])
+        } else if wrap {
+            Some(order[target.rem_euclid(len) as usize])
+        } else {
+            None
+        }
+    }
+
+    /// Перемешивает порядок заново. Текущий трек ставится первым, чтобы после
+    /// включения shuffle сыграли все остальные, прежде чем он повторится
+    fn reshuffle(&mut self) {
+        let mut rest: Vec<usize> = (0..self.tracks.len())
+            .filter(|&index| Some(index) != self.current_index)
+            .collect();
+        fastrand::shuffle(&mut rest);
+        self.shuffle_order = self.current_index.into_iter().chain(rest).collect();
+    }
 }
 
 #[derive(Serialize, Debug, Clone)]
@@ -39,10 +102,7 @@ impl Default for Player {
         Self {
             current_track: None,
             state: PlayerState::Stopped,
-            track_list: TrackList {
-                tracks: VecDeque::new(),
-                current_index: None,
-            },
+            track_list: TrackList::default(),
         }
     }
 }
@@ -123,7 +183,33 @@ impl PlayerController {
 
     /// Добавляет треки в конец списка. Текущий трек и воспроизведение не меняются.
     pub fn append_tracks(&mut self, tracks: impl IntoIterator<Item = Track>) {
-        self.player.track_list.tracks.extend(tracks);
+        let list = &mut self.player.track_list;
+        let first_new = list.tracks.len();
+        list.tracks.extend(tracks);
+
+        // Новые треки встают в случайном порядке в конец перемешанной очереди
+        let mut added: Vec<usize> = (first_new..list.tracks.len()).collect();
+        fastrand::shuffle(&mut added);
+        list.shuffle_order.extend(added);
+    }
+
+    /// Включает или выключает случайный порядок
+    pub fn toggle_shuffle(&mut self) {
+        let list = &mut self.player.track_list;
+        list.shuffle = !list.shuffle;
+        if list.shuffle {
+            list.reshuffle();
+        }
+    }
+
+    /// Включает режим повтора; повторное нажатие на уже включённый — выключает
+    pub fn toggle_repeat(&mut self, mode: RepeatMode) {
+        let list = &mut self.player.track_list;
+        list.repeat = if list.repeat == mode {
+            RepeatMode::Off
+        } else {
+            mode
+        };
     }
 
     /// Делает текущим трек из списка по его позиции.
@@ -140,37 +226,37 @@ impl PlayerController {
         Ok(())
     }
 
-    /// Запускает трек, следующий за текущим в списке. Если текущий — последний,
-    /// делает текущим первый трек списка, но не запускает его.
+    /// Вызывается, когда трек доиграл. С повтором одного — запускает его снова,
+    /// иначе — следующий по порядку (с учётом shuffle). Если список закончился и повтор
+    /// всего списка выключен, делает текущим первый трек, но не запускает его.
     pub fn play_next(&mut self) -> Result<(), String> {
-        if self.player.track_list.tracks.is_empty() {
-            return Ok(());
+        let list = &self.player.track_list;
+        if list.repeat == RepeatMode::One
+            && let Some(current) = list.current_index
+        {
+            self.select(current)?;
+            return self.play();
         }
-        let next = self
-            .player
-            .track_list
-            .current_index
-            .map_or(0, |index| index + 1);
-        if next >= self.player.track_list.tracks.len() {
-            return self.select(0);
+
+        match list.neighbor(1, list.repeat == RepeatMode::All) {
+            Some(next) => {
+                self.select(next)?;
+                self.play()
+            }
+            None => match list.play_order().first() {
+                Some(&first) => self.select(first),
+                None => Ok(()),
+            },
         }
-        self.select(next)?;
-        self.play()
     }
 
-    /// Кнопка «вперёд»: следующий трек списка, после последнего — первый.
+    /// Кнопка «вперёд»: следующий трек (с учётом shuffle), после последнего — первый.
     /// Если трек играл, новый тоже запускается.
     pub fn skip_next(&mut self) -> Result<(), String> {
-        let len = self.player.track_list.tracks.len();
-        if len == 0 {
-            return Ok(());
+        match self.player.track_list.neighbor(1, true) {
+            Some(next) => self.switch_to(next),
+            None => Ok(()),
         }
-        let next = self
-            .player
-            .track_list
-            .current_index
-            .map_or(0, |index| (index + 1) % len);
-        self.switch_to(next)
     }
 
     /// Кнопка «назад»: если трек играет дольше нескольких секунд, возвращает в его
@@ -178,21 +264,15 @@ impl PlayerController {
     pub fn skip_prev(&mut self) -> Result<(), String> {
         const RESTART_THRESHOLD_MS: u64 = 3000;
 
-        let len = self.player.track_list.tracks.len();
-        if len == 0 {
-            return Ok(());
-        }
         if self.player.track_list.current_index.is_some()
             && self.position_ms() > RESTART_THRESHOLD_MS
         {
             return self.seek(0);
         }
-        let prev = self
-            .player
-            .track_list
-            .current_index
-            .map_or(0, |index| (index + len - 1) % len);
-        self.switch_to(prev)
+        match self.player.track_list.neighbor(-1, true) {
+            Some(prev) => self.switch_to(prev),
+            None => Ok(()),
+        }
     }
 
     /// Переключает на трек, сохраняя состояние: играло — играет и новый

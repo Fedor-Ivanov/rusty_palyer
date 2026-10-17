@@ -20,3 +20,4 @@ egui = "0.37.0"
 eframe = "0.37"
 rfd = "0.17.2"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+fastrand = "2"

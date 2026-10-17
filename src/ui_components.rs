@@ -7,6 +7,7 @@ use crate::theme::{GRAY_1, GRAY_2, GRAY_3, GRAY_4, GRAY_5};
 
 const COVER_MAX_SIZE: f32 = 180.0;
 pub const HOVER_FADE_SECS: f32 = 0.15;
+pub const TRACK_ACTIVE_FADE_SECS: f32 = 0.2;
 
 pub fn render_album_cover(ui: &mut Ui, cover_data: Option<&[u8]>) {
     if let Some(cover) = cover_data {
@@ -119,4 +120,25 @@ pub fn icon_button(
         clicked,
         hover,
     }
+}
+
+/// Кнопка-переключатель в панели списка. Возвращает клик и плавные (0.0..=1.0)
+/// значения включения и наведения для отрисовки иконки.
+pub fn toggle_button(
+    ui: &mut Ui,
+    rect: Rect,
+    id_salt: &str,
+    on: bool,
+    tooltip: &str,
+) -> (bool, f32, f32) {
+    let button = icon_button(ui, rect, HitShape::Circle, id_salt, true);
+    let active = ui.ctx().animate_bool_with_time_and_easing(
+        button.response.id.with("active"),
+        on,
+        TRACK_ACTIVE_FADE_SECS,
+        egui::emath::easing::cubic_in_out,
+    );
+    let clicked = button.clicked;
+    button.response.on_hover_text(tooltip);
+    (clicked, active, button.hover)
 }
