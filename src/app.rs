@@ -33,7 +33,7 @@ const SLIDER_TRACK_HEIGHT: f32 = 5.0;
 const SLIDER_THUMB_RADIUS: f32 = 8.0;
 const TRACK_LIST_MIN_WIDTH: f32 = 150.0;
 const TRACK_LIST_MAX_WIDTH: f32 = 400.0;
-// Сколько места под основной контент панель списка обязана оставить
+// Минимальная ширина центральной области (CentralPanel): её обеспечивают максимумы боковых панелей
 const CONTENT_MIN_WIDTH: f32 = 260.0;
 
 pub struct PlayerApp {
@@ -314,6 +314,13 @@ impl PlayerApp {
         painter.circle_filled(pos2(thumb_x, rect.center().y), SLIDER_THUMB_RADIUS, GRAY_4);
     }
 
+    /// Содержимое самой левой боковой панели
+    fn render_sidebar(&mut self, ui: &mut Ui) {
+        egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
+            ui_components::block_title(ui, "Library", Align::Center, GRAY_1);
+        });
+    }
+
     /// Нижний блок списка: слева shuffle, справа две кнопки повтора
     fn render_playback_modes(&mut self, ui: &mut Ui) {
         let list = &self.controller.player().track_list;
@@ -358,12 +365,7 @@ impl PlayerApp {
         let panel_rect = ui.max_rect();
         // Отступы задаёт Frame: у результата vertical_centered/ScrollArea::show их нет
         egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
-            let row = ui
-                .vertical_centered(|ui| {
-                    ui.label(RichText::new("Playlist").size(16.0).color(GRAY_1));
-                })
-                .response
-                .rect;
+            let row = ui_components::block_title(ui, "Playlist", Align::Center, GRAY_1);
 
             // «+» прижат к правому краю строки, заголовок при этом остаётся по центру
             let add_rect = Rect::from_center_size(
@@ -507,16 +509,36 @@ impl eframe::App for PlayerApp {
             ui.ctx().request_repaint_after(Duration::from_millis(100));
         }
 
-        // Максимум зависит от ширины окна: при сужении окна панель сжимается первой,
-        // а не выдавливает основной контент
-        let actual_track_list_max_width = (ui.available_width() - CONTENT_MIN_WIDTH)
+        // У CentralPanel нет своей минимальной ширины — он получает остаток после боковых
+        // панелей. Поэтому минимум обеспечивают их максимумы: каждая может занять только то,
+        // что останется после минимумов всего, что правее неё. При сужении окна боковые
+        // панели сжимаются первыми, а центральная не становится уже CONTENT_MIN_WIDTH
+        let sidebar_max_width = (ui.available_width() - TRACK_LIST_MIN_WIDTH - CONTENT_MIN_WIDTH)
+            .clamp(TRACK_LIST_MIN_WIDTH, TRACK_LIST_MAX_WIDTH);
+
+        // Самая левая панель: добавляется первой, поэтому встаёт у края окна,
+        // а список треков — правее неё
+        egui::Panel::left("library_sidebar")
+            // Отступы задаёт Frame внутри render_sidebar — как у списка треков,
+            // чтобы заголовки панелей стояли на одной высоте
+            .frame(egui::Frame::new().fill(GRAY_5))
+            .default_size(200.0)
+            .size_range(TRACK_LIST_MIN_WIDTH..=sidebar_max_width)
+            .resizable(true)
+            .show_separator_line(false)
+            .show(ui, |ui| {
+                self.render_sidebar(ui);
+            });
+
+        // Считается после боковой панели: available_width уже без её ширины
+        let track_list_max_width = (ui.available_width() - CONTENT_MIN_WIDTH)
             .clamp(TRACK_LIST_MIN_WIDTH, TRACK_LIST_MAX_WIDTH);
 
         let track_list_frame = egui::Frame::new().fill(GRAY_4);
         egui::Panel::left("track_list")
             .frame(track_list_frame)
             .default_size(200.0)
-            .size_range(TRACK_LIST_MIN_WIDTH..=actual_track_list_max_width)
+            .size_range(TRACK_LIST_MIN_WIDTH..=track_list_max_width)
             .resizable(true)
             .show_separator_line(false)
             .show(ui, |ui| {

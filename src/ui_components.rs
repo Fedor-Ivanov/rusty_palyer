@@ -1,13 +1,15 @@
 use eframe::egui::{
-    self, CornerRadius, CursorIcon, Pos2, Rect, Response, Sense, Stroke, TextureHandle, Ui, vec2,
+    self, Align, Color32, CornerRadius, CursorIcon, Label, Layout, Pos2, Rect, Response, RichText,
+    Sense, Stroke, TextureHandle, Ui, vec2,
 };
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use crate::theme::{GRAY_1, GRAY_2, GRAY_3, GRAY_4, GRAY_5};
+use crate::theme::{GRAY_1, GRAY_3, GRAY_4};
 
 const COVER_MAX_SIZE: f32 = 180.0;
 pub const HOVER_FADE_SECS: f32 = 0.15;
 pub const TRACK_ACTIVE_FADE_SECS: f32 = 0.2;
+const BLOCK_TITLE_SIZE: f32 = 16.0;
 
 pub fn render_album_cover(ui: &mut Ui, cover_data: Option<&[u8]>) {
     if let Some(cover) = cover_data {
@@ -141,4 +143,20 @@ pub fn toggle_button(
     let clicked = button.clicked;
     button.response.on_hover_text(tooltip);
     (clicked, active, button.hover)
+}
+
+/// Заголовок блока (панели) с выравниванием `align`: `Align::Min` — слева,
+/// `Align::Center` — по центру, `Align::Max` — справа.
+/// Возвращает прямоугольник строки во всю ширину — по нему можно поставить кнопки
+/// рядом с заголовком.
+pub fn block_title(ui: &mut Ui, text: &str, align: Align, color: Color32) -> Rect {
+    ui.with_layout(Layout::top_down(align), |ui| {
+        // Строка во всю ширину при любом выравнивании, иначе прямоугольник
+        // был бы размером с текст
+        ui.set_min_width(ui.available_width());
+        let title = RichText::new(text).size(BLOCK_TITLE_SIZE).color(color);
+        ui.add(Label::new(title).selectable(false));
+    })
+    .response
+    .rect
 }
