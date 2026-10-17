@@ -1,3 +1,7 @@
+// В релизной сборке под Windows не открываем консольное окно рядом с приложением.
+// В отладочной консоль остаётся — в неё пишутся ошибки
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod app;
 mod audio;
 mod metadata;
