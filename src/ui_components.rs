@@ -4,14 +4,15 @@ use eframe::egui::{
 };
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use crate::theme::{GRAY_1, GRAY_3, GRAY_4};
+use crate::theme::{HIGHLIGHT, TEXT_FAINT};
 
 const COVER_MAX_SIZE: f32 = 180.0;
 pub const HOVER_FADE_SECS: f32 = 0.15;
 pub const TRACK_ACTIVE_FADE_SECS: f32 = 0.2;
 const BLOCK_TITLE_SIZE: f32 = 16.0;
+const COVER_RADIUS: u8 = 12;
 
-pub fn render_album_cover(ui: &mut Ui, cover_data: Option<&[u8]>) {
+pub fn album_cover(ui: &mut Ui, cover_data: Option<&[u8]>) {
     if let Some(cover) = cover_data {
         let cache_id = egui::Id::unique("album_cover");
         let cover_hash = {
@@ -48,25 +49,26 @@ pub fn render_album_cover(ui: &mut Ui, cover_data: Option<&[u8]>) {
         let size = texture.size_vec2();
         let max_size = vec2(ui.available_width(), COVER_MAX_SIZE);
         let scale = (max_size / size).min_elem().min(1.0);
-        ui.image((texture.id(), size * scale));
+        ui.add(egui::Image::new((texture.id(), size * scale)).corner_radius(COVER_RADIUS));
     } else {
         // Временная заглушка: квадрат с виниловой пластинкой
         let side = ui.available_width().min(COVER_MAX_SIZE);
         let (rect, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
         let painter = ui.painter();
-        painter.rect_filled(rect, CornerRadius::same(8), GRAY_1);
+        painter.rect_filled(rect, CornerRadius::same(COVER_RADIUS), HIGHLIGHT);
 
         // Размеры — доли стороны квадрата
         let center = rect.center();
         let r = |fraction: f32| side * fraction;
-        let groove = Stroke::new(1.0, GRAY_3.gamma_multiply(0.15));
-        painter.circle_filled(center, r(0.42), GRAY_4);
+        let disc = Color32::from_rgb(0x12, 0x12, 0x14);
+        let groove = Stroke::new(1.0, TEXT_FAINT.gamma_multiply(0.3));
+        painter.circle_filled(center, r(0.42), disc);
         painter.circle_stroke(center, r(0.42), groove);
         for fraction in [0.37, 0.32, 0.27, 0.22] {
             painter.circle_stroke(center, r(fraction), groove);
         }
-        painter.circle_filled(center, r(0.14), GRAY_3.gamma_multiply(0.15));
-        painter.circle_filled(center, r(0.025).max(2.0), GRAY_4);
+        painter.circle_filled(center, r(0.14), TEXT_FAINT);
+        painter.circle_filled(center, r(0.025).max(2.0), disc);
     }
 }
 

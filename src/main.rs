@@ -6,6 +6,7 @@ mod theme;
 mod track;
 mod ui_components;
 mod utils;
+mod window_glass;
 
 use eframe::egui;
 
@@ -23,7 +24,9 @@ fn main() -> eframe::Result {
             .with_inner_size([640.0, 480.0])
             // Ширина: минимумы боковой панели 150 + списка треков 150 + центральной области 260 = 560, плюс запас
             .with_min_inner_size([600.0, 400.0])
-            .with_icon(icon),
+            .with_icon(icon)
+            // Прозрачное окно: под ним система рисует настоящее размытие (см. window_glass.rs)
+            .with_transparent(true),
         ..Default::default()
     };
 
@@ -31,7 +34,10 @@ fn main() -> eframe::Result {
         "Rusty Player",
         options,
         Box::new(|cc| {
-            cc.egui_ctx.set_theme(egui::Theme::Light);
+            cc.egui_ctx.set_theme(egui::Theme::Dark);
+            if let Err(e) = window_glass::apply(cc) {
+                eprintln!("Не удалось включить размытие под окном: {e}");
+            }
             Ok(Box::new(app::PlayerApp::new()))
         }),
     )

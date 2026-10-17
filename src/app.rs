@@ -1,10 +1,13 @@
 use eframe::egui::{
-    self, Align, Align2, CornerRadius, CursorIcon, FontId, Label, Layout, Pos2, Rect, RichText,
-    Sense, Ui, pos2, vec2,
+    self, Align, Align2, CornerRadius, CursorIcon, FontId, Label, Layout, Pos2, Rangef, Rect,
+    RichText, Sense, Stroke, Ui, pos2, vec2,
 };
 use std::time::Duration;
 
-use crate::theme::{GRAY_1, GRAY_2, GRAY_3, GRAY_4, GRAY_5, RED};
+use crate::theme::{
+    HIGHLIGHT, HIGHLIGHT_STRONG, RED, RESIZE_LINE, SLIDER_TRACK, TEXT, TEXT_FAINT, TEXT_MUTED,
+    WINDOW_TINT,
+};
 use crate::{
     metadata::SUPPORTED_EXTENSIONS,
     player::{PlayerController, PlayerState, RepeatMode},
@@ -21,8 +24,6 @@ const PLAY_MORPH_SECS: f32 = 0.25;
 const ADD_BUTTON_SIZE: f32 = 24.0;
 // Зазор между кнопками повтора в нижнем блоке списка
 const REPEAT_BUTTON_GAP: f32 = 4.0;
-// Непрозрачность тёмной подложки под неактивным треком при наведении
-const TRACK_HOVER_DARKEN: f32 = 0.35;
 // Отступ между строками списка треков
 const TRACK_ROW_GAP: f32 = 6.0;
 // Длительность перехода, когда трек становится активным или перестаёт им быть
@@ -35,6 +36,8 @@ const TRACK_LIST_MIN_WIDTH: f32 = 150.0;
 const TRACK_LIST_MAX_WIDTH: f32 = 400.0;
 // Минимальная ширина центральной области (CentralPanel): её обеспечивают максимумы боковых панелей
 const CONTENT_MIN_WIDTH: f32 = 260.0;
+// Линия изменения ширины панели
+const RESIZE_LINE_WIDTH: f32 = 1.0;
 
 pub struct PlayerApp {
     controller: PlayerController,
@@ -105,7 +108,7 @@ impl PlayerApp {
 
     /// Кнопка по центру всего оставшегося места
     fn render_add_tracks_block(&mut self, ui: &mut Ui) {
-        let text = RichText::new("Open files").size(18.0).color(GRAY_4);
+        let text = RichText::new("Open files").size(18.0).color(TEXT);
 
         // Layout в egui не центрирует по вертикали, поэтому считаем размер кнопки
         // заранее и ставим её в центр свободной области сами
@@ -135,20 +138,21 @@ impl PlayerApp {
     fn render_current_track_info(&mut self, ui: &mut Ui) {
         ui.vertical(|ui| {
             if let Some(track) = &self.controller.player().current_track {
-                for line in [
-                    &track.title,
-                    &track.artist,
-                    &track.album,
-                    format_secs(track.duration_secs as f32).as_str(),
+                // Название ярче, остальное — второстепенным цветом
+                for (line, color) in [
+                    (track.title.as_str(), TEXT),
+                    (&track.artist, TEXT_MUTED),
+                    (&track.album, TEXT_MUTED),
+                    (format_secs(track.duration_secs as f32).as_str(), TEXT_MUTED),
                 ] {
                     if !line.is_empty() {
-                        ui.label(RichText::new(line).size(16.0).color(GRAY_5));
+                        ui.label(RichText::new(line).size(16.0).color(color));
                     }
                 }
                 ui.add_space(8.0);
 
                 ui.vertical_centered(|ui| {
-                    ui_components::render_album_cover(ui, track.album_cover.as_deref());
+                    ui_components::album_cover(ui, track.album_cover.as_deref());
                 });
             }
         });
@@ -180,7 +184,7 @@ impl PlayerApp {
                 Align2::LEFT_CENTER,
                 format_secs(position),
                 font.clone(),
-                GRAY_5,
+                TEXT_MUTED,
             );
             // Справа — сколько осталось. Округляем вверх: format_secs отбрасывает дробную
             // часть, и иначе прошедшее + оставшееся давало бы на секунду меньше длительности
@@ -188,9 +192,9 @@ impl PlayerApp {
             painter.text(
                 row.right_center(),
                 Align2::RIGHT_CENTER,
-                format!("{}", format_secs(remaining)),
+                format_secs(remaining),
                 font,
-                GRAY_5,
+                TEXT_MUTED,
             );
         }
 
@@ -300,24 +304,24 @@ impl PlayerApp {
 
         let painter = ui.painter();
         let track = Rect::from_center_size(rect.center(), vec2(rect.width(), SLIDER_TRACK_HEIGHT));
-        painter.rect_filled(track, CornerRadius::same(255), GRAY_1);
+        painter.rect_filled(track, CornerRadius::same(255), SLIDER_TRACK);
 
         let thumb_x = track.left() + track.width() * fraction;
         let filled = Rect::from_min_max(track.min, pos2(thumb_x, track.max.y));
-        painter.rect_filled(filled, CornerRadius::same(255), GRAY_4);
+        painter.rect_filled(filled, CornerRadius::same(255), TEXT);
 
         // Ползунок не вылезает за края окна. max/min вместо clamp: на очень узком
         // окне левая граница может оказаться правее правой, и clamp паникует
         let thumb_x = thumb_x
             .min(rect.right() - SLIDER_THUMB_RADIUS)
             .max(rect.left() + SLIDER_THUMB_RADIUS);
-        painter.circle_filled(pos2(thumb_x, rect.center().y), SLIDER_THUMB_RADIUS, GRAY_4);
+        painter.circle_filled(pos2(thumb_x, rect.center().y), SLIDER_THUMB_RADIUS, TEXT);
     }
 
     /// Содержимое самой левой боковой панели
     fn render_sidebar(&mut self, ui: &mut Ui) {
         egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
-            ui_components::block_title(ui, "Library", Align::Center, GRAY_1);
+            ui_components::block_title(ui, "Library", Align::Center, TEXT);
         });
     }
 
@@ -365,7 +369,7 @@ impl PlayerApp {
         let panel_rect = ui.max_rect();
         // Отступы задаёт Frame: у результата vertical_centered/ScrollArea::show их нет
         egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
-            let row = ui_components::block_title(ui, "Playlist", Align::Center, GRAY_1);
+            let row = ui_components::block_title(ui, "Playlist", Align::Center, TEXT);
 
             // «+» прижат к правому краю строки, заголовок при этом остаётся по центру
             let add_rect = Rect::from_center_size(
@@ -401,7 +405,7 @@ impl PlayerApp {
                 Align2::CENTER_CENTER,
                 "No tracks",
                 FontId::proportional(14.0),
-                GRAY_3,
+                TEXT_FAINT,
             );
             return;
         }
@@ -432,12 +436,12 @@ impl PlayerApp {
                         ui_components::TRACK_ACTIVE_FADE_SECS,
                         egui::emath::easing::cubic_in_out,
                     );
-                    let text_color = GRAY_1.lerp_to_gamma(GRAY_5, active);
+                    let text_color = TEXT_MUTED.lerp_to_gamma(TEXT, active);
 
                     // begin/paint вместо show: фон рисуется после содержимого (под ним),
                     // поэтому его цвет можно выбрать, уже зная, наведён ли курсор на строку
                     let mut row_frame = egui::Frame::new()
-                        .corner_radius(6)
+                        .corner_radius(8)
                         .inner_margin(6.0)
                         .begin(ui);
 
@@ -466,16 +470,16 @@ impl PlayerApp {
                         .interact(row_rect, row_id, Sense::click())
                         .on_hover_cursor(CursorIcon::PointingHand);
 
-                    // Неактивный трек под курсором плавно затемняем
+                    // Неактивный трек под курсором плавно подсвечиваем
                     let hover = ui.ctx().animate_bool_with_time_and_easing(
                         row_id.with("hover"),
                         row.hovered() && !is_current,
                         ui_components::HOVER_FADE_SECS,
                         egui::emath::easing::cubic_out,
                     );
-                    let hover_fill = GRAY_5.gamma_multiply(TRACK_HOVER_DARKEN * hover);
+                    let hover_fill = HIGHLIGHT.gamma_multiply(hover);
                     // Активный фон проявляется поверх подсветки наведения
-                    row_frame.frame.fill = hover_fill.lerp_to_gamma(GRAY_2, active);
+                    row_frame.frame.fill = hover_fill.lerp_to_gamma(HIGHLIGHT_STRONG, active);
                     row_frame.paint(ui);
 
                     if row.clicked() {
@@ -496,6 +500,11 @@ impl PlayerApp {
 }
 
 impl eframe::App for PlayerApp {
+    /// Окно прозрачное: под ним система рисует размытие, поэтому сами ничего не заливаем
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        [0.0; 4]
+    }
+
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         // Трек доиграл — переходим к следующему в очереди
         if self.controller.poll_events()
@@ -509,19 +518,32 @@ impl eframe::App for PlayerApp {
             ui.ctx().request_repaint_after(Duration::from_millis(100));
         }
 
+        // Тонировка системного размытия — первой, под всеми панелями. Других заливок у панелей
+        // нет: стекло по всему окну одного цвета
+        ui.painter().rect_filled(ui.max_rect(), 0, WINDOW_TINT);
+
         // У CentralPanel нет своей минимальной ширины — он получает остаток после боковых
         // панелей. Поэтому минимум обеспечивают их максимумы: каждая может занять только то,
-        // что останется после минимумов всего, что правее неё. При сужении окна боковые
+        // что останется после минимумов всего, что ещё не размещено. При сужении окна боковые
         // панели сжимаются первыми, а центральная не становится уже CONTENT_MIN_WIDTH
         let sidebar_max_width = (ui.available_width() - TRACK_LIST_MIN_WIDTH - CONTENT_MIN_WIDTH)
             .clamp(TRACK_LIST_MIN_WIDTH, TRACK_LIST_MAX_WIDTH);
 
-        // Самая левая панель: добавляется первой, поэтому встаёт у края окна,
-        // а список треков — правее неё
-        egui::Panel::left("library_sidebar")
-            // Отступы задаёт Frame внутри render_sidebar — как у списка треков,
-            // чтобы заголовки панелей стояли на одной высоте
-            .frame(egui::Frame::new().fill(GRAY_5))
+        // egui подсвечивает край панели белой линией при наведении и перетаскивании —
+        // толщину берёт из hovered/active fg_stroke родительского Ui. Вместо неё у нас своя
+        // линия в тон интерфейса (paint_resize_line), поэтому на время боковых панелей
+        // толщина обнуляется. Меняется только толщина: цвет текста виджетов внутри не страдает
+        let widgets = &mut ui.style_mut().visuals.widgets;
+        let edge_strokes = (
+            widgets.hovered.fg_stroke.width,
+            widgets.active.fg_stroke.width,
+        );
+        widgets.hovered.fg_stroke.width = 0.0;
+        widgets.active.fg_stroke.width = 0.0;
+
+        // Библиотека — у левого края окна
+        let sidebar = egui::Panel::left("library_sidebar")
+            .frame(egui::Frame::new())
             .default_size(200.0)
             .size_range(TRACK_LIST_MIN_WIDTH..=sidebar_max_width)
             .resizable(true)
@@ -534,10 +556,10 @@ impl eframe::App for PlayerApp {
         let track_list_max_width = (ui.available_width() - CONTENT_MIN_WIDTH)
             .clamp(TRACK_LIST_MIN_WIDTH, TRACK_LIST_MAX_WIDTH);
 
-        let track_list_frame = egui::Frame::new().fill(GRAY_4);
-        egui::Panel::left("track_list")
-            .frame(track_list_frame)
-            .default_size(200.0)
+        // Список треков — у правого края окна
+        let track_list = egui::Panel::right("track_list")
+            .frame(egui::Frame::new())
+            .default_size(240.0)
             .size_range(TRACK_LIST_MIN_WIDTH..=track_list_max_width)
             .resizable(true)
             .show_separator_line(false)
@@ -549,7 +571,7 @@ impl eframe::App for PlayerApp {
                 // Блок прижат к низу панели. Добавляется до списка: панель сразу забирает
                 // своё место, а ScrollArea получает только оставшееся и под блок не заходит
                 egui::Panel::bottom("track_list_bottom")
-                    // Без своего frame панель залила бы себя светлым фоном по умолчанию
+                    // Без своего frame панель залила бы себя фоном по умолчанию
                     .frame(egui::Frame::new().inner_margin(16.0))
                     .resizable(false)
                     .show_separator_line(false)
@@ -560,35 +582,56 @@ impl eframe::App for PlayerApp {
                 self.render_track_list(ui);
             });
 
-        // Панели нужно добавлять до CentralPanel — он занимает всё оставшееся место
+        let widgets = &mut ui.style_mut().visuals.widgets;
+        (
+            widgets.hovered.fg_stroke.width,
+            widgets.active.fg_stroke.width,
+        ) = edge_strokes;
+
+        // Панели нужно добавлять до CentralPanel — он занимает всё оставшееся место.
+        // Добавлена после боковых, поэтому тянется только под центральной карточкой
         egui::Panel::bottom("audio_controls")
-            .frame(egui::Frame::new().fill(GRAY_2).inner_margin(16.0))
+            .frame(egui::Frame::new())
             .show_separator_line(false)
             .show(ui, |ui| {
-                self.render_controls(ui);
+                // Без стекла: контролы лежат прямо на фоне окна
+                egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
+                    self.render_controls(ui);
+                });
             });
 
-        let main_frame = egui::Frame::central_panel(ui.style())
-            .fill(GRAY_2)
-            .inner_margin(16.0);
-
+        // Центральная область без своего фона: под ней тонированное системное размытие
         egui::CentralPanel::default()
-            .frame(main_frame)
+            .frame(egui::Frame::new())
             .show(ui, |ui| {
-                ui.vertical_centered_justified(|ui| {
-                    // Ошибка видна всегда, а не только пока список пуст: она бывает
-                    // и при воспроизведении. Идёт первой, чтобы кнопка «Add tracks»
-                    // центрировалась в месте, которое осталось под ней
-                    if let Some(error) = &self.error {
-                        ui.label(RichText::new(error).color(RED));
-                    }
+                egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
+                    ui.vertical_centered_justified(|ui| {
+                        // Ошибка видна всегда, а не только пока список пуст: она бывает
+                        // и при воспроизведении. Идёт первой, чтобы кнопка «Open files»
+                        // центрировалась в месте, которое осталось под ней
+                        if let Some(error) = &self.error {
+                            ui.label(RichText::new(error).color(RED));
+                        }
 
-                    if self.controller.player().track_list.tracks.is_empty() {
-                        self.render_add_tracks_block(ui);
-                    } else {
-                        self.render_current_track_info(ui);
-                    }
-                })
+                        if self.controller.player().track_list.tracks.is_empty() {
+                            self.render_add_tracks_block(ui);
+                        } else {
+                            self.render_current_track_info(ui);
+                        }
+                    })
+                });
             });
+
+        // Линии ресайза — последними, поверх всего, на границе панелей — там, где egui даёт тянуть край
+        let sidebar_rect = sidebar.response.rect;
+        paint_resize_line(ui, sidebar_rect.right(), sidebar_rect.y_range());
+        let track_list_rect = track_list.response.rect;
+        paint_resize_line(ui, track_list_rect.left(), track_list_rect.y_range());
     }
+}
+
+/// Линия изменения ширины боковой панели — на всю высоту границы панелей, видна всегда
+fn paint_resize_line(ui: &Ui, edge_x: f32, y_range: Rangef) {
+    ui.painter()
+        .vline(edge_x, y_range, Stroke::new(RESIZE_LINE_WIDTH, RESIZE_LINE));
 }

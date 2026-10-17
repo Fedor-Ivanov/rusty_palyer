@@ -21,3 +21,20 @@ eframe = "0.37"
 rfd = "0.17.2"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 fastrand = "2"
+raw-window-handle = "0.6"
+encoding_rs = "0.8.42"
+
+# Системное размытие под прозрачным окном (см. src/window_glass.rs)
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSString", "NSThread"] }
+objc2-app-kit = { version = "0.3", features = [
+    "NSAppearance",
+    "NSGraphics",
+    "NSResponder",
+    "NSView",
+    "NSVisualEffectView",
+] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+window-vibrancy = "0.8.1"

@@ -1,4 +1,4 @@
-use crate::theme::{GRAY_1, GRAY_3, GRAY_4, GRAY_5};
+use crate::theme::{HIGHLIGHT_STRONG, ICON, ICON_DISABLED, ICON_OFF, ICON_SOFT};
 use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
 
 /// Секунды в `мм:сс` или `чч:мм:сс`.
@@ -66,8 +66,8 @@ const PAUSE_BARS: [[(f32, f32); 4]; 2] = [
 ];
 const PLAY_CORNER_RADIUS: f32 = 1.0;
 const PAUSE_CORNER_RADIUS: f32 = 1.0;
-/// Непрозрачность круга под иконкой (поверх `GRAY_4`): в покое и при наведении
-const PLAY_BG_OPACITY: f32 = 0.18;
+/// Непрозрачность белого круга под иконкой play: в покое и при наведении
+const PLAY_BG_OPACITY: f32 = 0.15;
 const PLAY_BG_HOVER_OPACITY: f32 = 0.25;
 
 // Иконка «следующий трек»: два треугольника и тонкая полоска. «Предыдущий» — её зеркальное
@@ -85,8 +85,6 @@ const SKIP_HIT_PADDING: f32 = 4.0;
 // Иконка «+»: два отрезка, раздутых на радиус скругления
 const ADD_BARS: [[(f32, f32); 2]; 2] = [[(8.0, 12.0), (16.0, 12.0)], [(12.0, 8.0), (12.0, 16.0)]];
 const ADD_CORNER_RADIUS: f32 = 1.0;
-/// Непрозрачность тёмного круга под иконками панели списка при наведении; в покое круга нет
-const PANEL_ICON_HOVER_OPACITY: f32 = 0.6;
 
 // Иконки-переключатели (shuffle, repeat) нарисованы линиями толщиной ICON_STROKE
 // со стрелками-треугольниками на концах
@@ -121,9 +119,9 @@ fn paint_button_bg(ui: &Ui, rect: Rect, disabled: bool, hover: f32) -> Color32 {
     ui.painter().circle_filled(
         rect.center(),
         rect.width() / 2.0,
-        GRAY_4.gamma_multiply(bg_opacity * alpha),
+        Color32::WHITE.gamma_multiply(bg_opacity * alpha),
     );
-    GRAY_4.gamma_multiply(alpha)
+    if disabled { ICON_DISABLED } else { ICON }
 }
 
 /// Заливает фигуру, заданную в координатах иконки 24×24, со скруглением `radius`
@@ -161,11 +159,14 @@ pub fn paint_play_pause(ui: &Ui, rect: Rect, morph: f32, disabled: bool, hover: 
 }
 
 /// Кнопка «следующий трек» (`forward`) или «предыдущий». Без круга-подложки:
-/// при наведении иконка плавно темнеет.
+/// при наведении иконка плавно светлеет.
 /// `hover`: 0.0 — без наведения, 1.0 — наведено, между ними — переход.
 pub fn paint_skip(ui: &Ui, rect: Rect, forward: bool, disabled: bool, hover: f32) {
-    let alpha = if disabled { 0.4 } else { 1.0 };
-    let icon_color = GRAY_4.lerp_to_gamma(GRAY_5, hover).gamma_multiply(alpha);
+    let icon_color = if disabled {
+        ICON_DISABLED
+    } else {
+        ICON_SOFT.lerp_to_gamma(ICON, hover)
+    };
 
     // «Назад» — зеркальное отражение «вперёд» по горизонтали
     let point = |(x, y): (f32, f32)| {
@@ -206,14 +207,12 @@ pub fn skip_hit_rect(rect: Rect) -> Rect {
         .expand(SKIP_CORNER_RADIUS * scale + SKIP_HIT_PADDING)
 }
 
-/// Тёмный круг под иконкой в панели списка: плавно проявляется при наведении.
-/// Подложка как у play здесь не годится: она того же цвета, что фон панели
-/// (`GRAY_4`), и не была бы видна.
+/// Светлый круг под иконкой в панели: плавно проявляется при наведении
 fn paint_hover_circle(ui: &Ui, rect: Rect, hover: f32) {
     ui.painter().circle_filled(
         rect.center(),
         rect.width() / 2.0,
-        GRAY_5.gamma_multiply(PANEL_ICON_HOVER_OPACITY * hover),
+        HIGHLIGHT_STRONG.gamma_multiply(hover),
     );
 }
 
@@ -234,17 +233,17 @@ fn stroke_icon_path(ui: &Ui, rect: Rect, points: &[(f32, f32)], width: f32, colo
 
 /// Цвет иконки-переключателя: выключен — приглушённый, включён — светлый
 fn toggle_color(active: f32) -> Color32 {
-    GRAY_3.lerp_to_gamma(GRAY_1, active)
+    ICON_OFF.lerp_to_gamma(ICON, active)
 }
 
 /// Кнопка «+» в заголовке списка: светлый плюс, при наведении под ним плавно
-/// проявляется тёмный круг.
+/// проявляется круг.
 /// `hover`: 0.0 — без наведения, 1.0 — наведено, между ними — переход.
 pub fn paint_add(ui: &Ui, rect: Rect, hover: f32) {
     paint_hover_circle(ui, rect, hover);
     for bar in ADD_BARS {
         let points = bar.map(|(x, y)| pos2(x, y));
-        fill_icon_shape(ui, rect, &points, ADD_CORNER_RADIUS, GRAY_1);
+        fill_icon_shape(ui, rect, &points, ADD_CORNER_RADIUS, ICON);
     }
 }
 
