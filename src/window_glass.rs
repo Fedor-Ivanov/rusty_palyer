@@ -15,7 +15,7 @@ pub fn apply(cc: &eframe::CreationContext<'_>) -> Result<(), String> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = cc;
-        Err("размытие под окном поддерживается только на macOS и Windows".into())
+        Err("window blur is only supported on macOS and Windows".into())
     }
 }
 
@@ -35,17 +35,18 @@ mod macos {
     /// (так делает window-vibrancy — для Tauri это подходит, для egui нет).
     /// Сам вью egui при этом остаётся на месте, так что ввод не затрагивается.
     pub fn apply(cc: &eframe::CreationContext<'_>) -> Result<(), String> {
-        let mtm =
-            MainThreadMarker::new().ok_or("размытие можно включить только из главного потока")?;
+        let mtm = MainThreadMarker::new()
+            .ok_or("window blur can only be enabled from the main thread")?;
 
         let handle = cc.window_handle().map_err(|e| e.to_string())?;
         let RawWindowHandle::AppKit(handle) = handle.as_raw() else {
-            return Err("окно не AppKit".into());
+            return Err("the window is not an AppKit window".into());
         };
         // SAFETY: вью принадлежит окну, которое живо всё время работы приложения
         let content_view: &NSView = unsafe { handle.ns_view.cast().as_ref() };
         // SAFETY: рамка окна живёт столько же, сколько окно
-        let frame_view = unsafe { content_view.superview() }.ok_or("у вью окна нет рамки")?;
+        let frame_view =
+            unsafe { content_view.superview() }.ok_or("the window view has no frame view")?;
 
         let blur = NSVisualEffectView::initWithFrame(mtm.alloc(), frame_view.bounds());
         // HUDWindow — тёмный материал под тёмную тему

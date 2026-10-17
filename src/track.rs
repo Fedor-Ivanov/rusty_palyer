@@ -10,6 +10,8 @@ pub struct Track {
     pub artist: String,
     pub duration_secs: u64,
     pub album: String,
+    /// Читается только у текущего трека (см. `PlayerController::set_current_track`): обложки всего
+    /// списка заняли бы слишком много памяти. У треков в списке всегда `None`
     pub album_cover: Option<Vec<u8>>,
 }
 
@@ -25,7 +27,7 @@ impl Track {
             artist: meta.artist,
             album: meta.album,
             duration_secs: meta.duration_secs,
-            album_cover: meta.album_cover,
+            album_cover: None,
         })
     }
 }

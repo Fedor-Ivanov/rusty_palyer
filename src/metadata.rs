@@ -1,9 +1,13 @@
 use lofty::{
+    config::ParseOptions,
     file::{AudioFile, TaggedFileExt},
     probe::Probe,
     tag::Accessor,
 };
-use std::{fs::File, path::Path};
+use std::{
+    fs::{self, File},
+    path::{Path, PathBuf},
+};
 use symphonia::{
     core::{
         codecs::{CodecParameters, audio::AudioDecoderOptions},
@@ -22,14 +26,16 @@ pub struct FileMetadata {
     pub artist: String,
     pub album: String,
     pub duration_secs: u64,
-    pub album_cover: Option<Vec<u8>>,
 }
 
 pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
+    // Обложку здесь не читаем: метаданные читаются для всего списка, а обложка нужна
+    // только текущему треку (см. read_cover). Держать тысячи обложек в памяти дорого
     let tagged = Probe::open(path)
-        .map_err(|e| format!("Не удалось открыть файл: {e}"))?
+        .map_err(|e| format!("Could not open the file: {e}"))?
+        .options(ParseOptions::new().read_cover_art(false))
         .read()
-        .map_err(|e| format!("Не удалось прочитать метаданные: {e}"))?;
+        .map_err(|e| format!("Could not read the metadata: {e}"))?;
 
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag());
 
@@ -51,8 +57,6 @@ pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
         .and_then(|t| t.album().map(|s| fix_cp1251(&s)))
         .unwrap_or_default();
 
-    let album_cover = tag.and_then(|t| t.pictures().first().map(|p| p.data().to_vec()));
-
     let duration_secs = tagged.properties().duration().as_secs();
 
     Ok(FileMetadata {
@@ -60,8 +64,46 @@ pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
         artist,
         album,
         duration_secs,
-        album_cover,
     })
+}
+
+/// Обложка альбома из тегов файла. Читается по требованию — для текущего трека.
+pub fn read_cover(path: &Path) -> Option<Vec<u8>> {
+    let tagged = Probe::open(path).ok()?.read().ok()?;
+    let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
+    tag.pictures()
+        .first()
+        .map(|picture| picture.data().to_vec())
+}
+
+/// Все аудиофайлы поддерживаемых форматов в папке, включая вложенные, по алфавиту пути
+/// без учёта регистра.
+/// Остальные файлы (обложки, плейлисты и т. п.) пропускаются; вложенные папки,
+/// которые не удалось прочитать, — тоже, чтобы одна такая папка не срывала всё добавление.
+pub fn find_audio_files(dir: &Path) -> Result<Vec<PathBuf>, String> {
+    fn walk(dir: &Path, found: &mut Vec<PathBuf>) -> std::io::Result<()> {
+        for entry in fs::read_dir(dir)? {
+            let path = entry?.path();
+            if path.is_dir() {
+                let _ = walk(&path, found);
+            } else if is_supported_extension(&path) {
+                found.push(path);
+            }
+        }
+        Ok(())
+    }
+
+    let mut found = Vec::new();
+    walk(dir, &mut found).map_err(|e| format!("Could not read the folder: {e}"))?;
+    // Без учёта регистра, как в Finder и Проводнике
+    found.sort_by_key(|path| path.to_string_lossy().to_lowercase());
+    Ok(found)
+}
+
+fn is_supported_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| SUPPORTED_EXTENSIONS.contains(&e.to_ascii_lowercase().as_str()))
 }
 
 /// Чинит теги в Windows-1251, прочитанные как Latin-1.
@@ -102,9 +144,9 @@ pub fn check_supported(path: &Path) -> Result<(), String> {
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
         .filter(|e| SUPPORTED_EXTENSIONS.contains(&e.as_str()))
-        .ok_or_else(|| "Неподдерживаемый формат файла".to_string())?;
+        .ok_or_else(|| "Unsupported file format".to_string())?;
 
-    let file = File::open(path).map_err(|e| format!("Не удалось открыть файл: {e}"))?;
+    let file = File::open(path).map_err(|e| format!("Could not open the file: {e}"))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
     let mut hint = Hint::new();
@@ -113,7 +155,7 @@ pub fn check_supported(path: &Path) -> Result<(), String> {
     // Уровень 1: контейнер
     let format = get_probe()
         .probe(&hint, mss, Default::default(), Default::default())
-        .map_err(|_| "Неподдерживаемый или повреждённый файл".to_string())?;
+        .map_err(|_| "Unsupported or damaged file".to_string())?;
 
     // Берём первую аудиодорожку
     let params = format
@@ -123,19 +165,38 @@ pub fn check_supported(path: &Path) -> Result<(), String> {
             Some(CodecParameters::Audio(p)) => Some(p),
             _ => None,
         })
-        .ok_or_else(|| "В файле нет аудиодорожки".to_string())?;
+        .ok_or_else(|| "The file has no audio track".to_string())?;
 
     // Уровень 2: кодек
     get_codecs()
         .make_audio_decoder(params, &AudioDecoderOptions::default())
-        .map_err(|_| "Этот аудиокодек не поддерживается".to_string())?;
+        .map_err(|_| "This audio codec is not supported".to_string())?;
 
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::fix_cp1251;
+    use super::{find_audio_files, fix_cp1251};
+    use std::fs;
+
+    #[test]
+    fn finds_audio_files_recursively() {
+        let dir = std::env::temp_dir().join(format!("rusty_player_test_{}", std::process::id()));
+        fs::create_dir_all(dir.join("CD2")).unwrap();
+        for name in ["b.mp3", "a.FLAC", "cover.jpg", "CD2/c.ogg", "CD2/notes.txt"] {
+            fs::write(dir.join(name), b"").unwrap();
+        }
+
+        let found = find_audio_files(&dir).unwrap();
+        fs::remove_dir_all(&dir).unwrap();
+
+        let names: Vec<_> = found
+            .iter()
+            .map(|p| p.strip_prefix(&dir).unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, ["a.FLAC", "b.mp3", "CD2/c.ogg"]);
+    }
 
     #[test]
     fn decodes_cp1251_read_as_latin1() {

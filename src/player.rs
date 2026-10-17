@@ -169,12 +169,14 @@ impl PlayerController {
     }
 
     /// Делает трек текущим. Воспроизведение не начинается — для этого есть `play`.
-    fn set_current_track(&mut self, track: Track) -> Result<(), String> {
+    fn set_current_track(&mut self, mut track: Track) -> Result<(), String> {
         // Если что-то уже играло, останавливаем: выбран другой трек
         self.audio.send(AudioCmd::Stop).map_err(|e| e.to_string())?;
 
         self.position_ms.store(0, Ordering::Relaxed);
 
+        // Обложку читаем только для текущего трека — у треков в списке её нет
+        track.album_cover = crate::metadata::read_cover(&track.path);
         self.player.current_track = Some(track);
         self.player.state = PlayerState::Stopped;
 
@@ -220,7 +222,7 @@ impl PlayerController {
             .tracks
             .get(index)
             .cloned()
-            .ok_or("Трека с таким номером нет в списке")?;
+            .ok_or("There is no track with this number in the list")?;
         self.set_current_track(track)?;
         self.player.track_list.current_index = Some(index);
         Ok(())
@@ -304,7 +306,7 @@ impl PlayerController {
             .current_track
             .as_ref()
             .map(|t| t.path.clone())
-            .ok_or("Трек не выбран")?;
+            .ok_or("No track selected")?;
 
         let start_at = Duration::from_millis(self.position_ms());
 

@@ -38,3 +38,8 @@ pub const HIGHLIGHT_STRONG: Color32 = Color32::from_rgba_premultiplied(40, 40, 4
 pub const SLIDER_TRACK: Color32 = Color32::from_rgba_premultiplied(55, 55, 55, 55);
 
 pub const RED: Color32 = Color32::from_rgb(0xFF, 0x6B, 0x6B); // error, debug color
+/// Фон плашек сверху окна (ошибка, прогресс добавления): почти непрозрачный —
+/// они лежат поверх контента и должны читаться
+pub const BANNER_FILL: Color32 = Color32::from_rgba_unmultiplied_const(28, 28, 30, 245);
+/// Рамка плашки прогресса — нейтральная, в отличие от красной у ошибки
+pub const BANNER_BORDER: Color32 = Color32::from_rgba_premultiplied(45, 45, 45, 45);

@@ -1,14 +1,17 @@
 use eframe::egui::{
-    self, Align, Align2, CornerRadius, CursorIcon, FontId, Label, Layout, Pos2, Rangef, Rect,
-    RichText, Sense, Stroke, Ui, pos2, vec2,
+    self, Align, Align2, CornerRadius, CursorIcon, FontId, Label, Layout, Pos2, Rect, RichText,
+    Sense, Ui, pos2, vec2,
 };
-use std::time::Duration;
+use std::{
+    collections::VecDeque,
+    time::{Duration, Instant},
+};
 
 use crate::theme::{
-    HIGHLIGHT, HIGHLIGHT_STRONG, RED, RESIZE_LINE, SLIDER_TRACK, TEXT, TEXT_FAINT, TEXT_MUTED,
-    WINDOW_TINT,
+    HIGHLIGHT, HIGHLIGHT_STRONG, SLIDER_TRACK, TEXT, TEXT_FAINT, TEXT_MUTED, WINDOW_TINT,
 };
 use crate::{
+    loader::{Finished, Loader, Source},
     metadata::SUPPORTED_EXTENSIONS,
     player::{PlayerController, PlayerState, RepeatMode},
     track::Track,
@@ -23,27 +26,40 @@ const PLAY_BUTTON_SIZE: f32 = 60.0;
 const PLAY_MORPH_SECS: f32 = 0.25;
 const ADD_BUTTON_SIZE: f32 = 24.0;
 // Зазор между кнопками повтора в нижнем блоке списка
-const REPEAT_BUTTON_GAP: f32 = 4.0;
-// Отступ между строками списка треков
+const ICON_BUTTON_GAP: f32 = 4.0;
+// Строки списка треков: высота фиксированная — без неё список нельзя виртуализировать
+// (рисовать только видимые строки), так как позицию строки не вычислить без измерения
+const TRACK_ROW_HEIGHT: f32 = 30.0;
+const TRACK_ROW_PADDING: f32 = 8.0;
 const TRACK_ROW_GAP: f32 = 6.0;
+// Фоновое добавление: как часто проверять готовность, через сколько показывать прогресс
+// (быстрое добавление обходится без него) и сколько минимум его держать, чтобы не мелькал
+const LOADER_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const LOADER_SHOW_DELAY: Duration = Duration::from_millis(400);
+const LOADER_MIN_VISIBLE: Duration = Duration::from_millis(500);
 // Длительность перехода, когда трек становится активным или перестаёт им быть
 const SKIP_BUTTON_SIZE: f32 = 40.0;
 // Зазор между кнопкой play и кнопками prev/next
 const SKIP_BUTTON_GAP: f32 = 4.0;
 const SLIDER_TRACK_HEIGHT: f32 = 5.0;
 const SLIDER_THUMB_RADIUS: f32 = 8.0;
-const TRACK_LIST_MIN_WIDTH: f32 = 150.0;
-const TRACK_LIST_MAX_WIDTH: f32 = 400.0;
+// Ширина боковых панелей (библиотека и список треков): пределы ресайза и стартовая ширина
+const SIDE_PANEL_MIN_WIDTH: f32 = 180.0;
+const SIDE_PANEL_MAX_WIDTH: f32 = 420.0;
+const SIDEBAR_DEFAULT_WIDTH: f32 = 240.0;
+const TRACK_LIST_DEFAULT_WIDTH: f32 = 300.0;
 // Минимальная ширина центральной области (CentralPanel): её обеспечивают максимумы боковых панелей
 const CONTENT_MIN_WIDTH: f32 = 260.0;
-// Линия изменения ширины панели
-const RESIZE_LINE_WIDTH: f32 = 1.0;
-
 pub struct PlayerApp {
     controller: PlayerController,
     error: Option<String>,
     /// Позиция ползунка (в секундах), пока пользователь его тянет
     drag_secs: Option<f32>,
+    /// Фоновые добавления треков. Обрабатываются по очереди: треки второго появятся
+    /// в списке после треков первого, даже если он закончит раньше
+    loaders: VecDeque<Loader>,
+    /// С какого момента виден прогресс текущего добавления; `None` — не виден
+    loader_shown_at: Option<Instant>,
 }
 
 impl PlayerApp {
@@ -52,14 +68,21 @@ impl PlayerApp {
             controller: PlayerController::new(),
             error: None,
             drag_secs: None,
+            loaders: VecDeque::new(),
+            loader_shown_at: None,
         }
     }
 
+    /// Запоминает ошибку для плашки. Успех её не сбрасывает: плашка закрывается только
+    /// кнопкой «OK», иначе ошибка исчезала бы сама при следующем удачном действии
     fn set_result(&mut self, result: Result<(), String>) {
-        self.error = result.err();
+        if let Err(e) = result {
+            self.error = Some(e);
+        }
     }
 
-    fn add_tracks(&mut self) {
+    /// Выбор отдельных файлов
+    fn add_files(&mut self) {
         let Some(paths) = rfd::FileDialog::new()
             .add_filter("Audio", SUPPORTED_EXTENSIONS)
             .pick_files()
@@ -67,34 +90,75 @@ impl PlayerApp {
             // Пользователь закрыл диалог: оставляем текущий трек
             return;
         };
+        self.loaders.push_back(Loader::start(Source::Files(paths)));
+    }
 
-        // Неподходящие файлы пропускаем, остальные всё равно открываем
-        let mut tracks = Vec::new();
-        let mut errors = Vec::new();
-        for path in paths {
-            let name = path
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned();
-            match Track::from_path(path) {
-                Ok(track) => tracks.push(track),
-                Err(e) => errors.push(format!("{name}: {e}")),
+    /// Выбор папки: добавляются все аудиофайлы в ней, включая вложенные папки
+    fn add_folder(&mut self) {
+        let Some(dir) = rfd::FileDialog::new().pick_folder() else {
+            return;
+        };
+        self.loaders.push_back(Loader::start(Source::Folder(dir)));
+    }
+
+    /// Забирает готовые треки у фонового добавления и кладёт их в конец списка.
+    /// Вызывается каждый кадр
+    fn poll_loaders(&mut self, ctx: &egui::Context) {
+        let Some(loader) = self.loaders.front_mut() else {
+            return;
+        };
+        loader.update();
+
+        // Прогресс показываем, только если добавление затянулось: несколько файлов
+        // добавляются быстрее, и тогда прогресс не мелькает вовсе
+        if self.loader_shown_at.is_none() && loader.elapsed() >= LOADER_SHOW_DELAY {
+            self.loader_shown_at = Some(Instant::now());
+        }
+        // Уже показанный прогресс держим не меньше LOADER_MIN_VISIBLE — иначе он мог бы
+        // появиться и сразу исчезнуть, это выглядит хуже, чем не показывать его вовсе
+        let can_hide = self
+            .loader_shown_at
+            .is_none_or(|shown_at| shown_at.elapsed() >= LOADER_MIN_VISIBLE);
+
+        if loader.is_finished() && can_hide {
+            let finished = self.loaders.pop_front().map(Loader::finish);
+            self.loader_shown_at = None;
+            if let Some(finished) = finished {
+                self.apply_loaded(finished);
             }
         }
 
-        // Треки добавляются в конец очереди. Если ничего ещё не выбрано,
-        // текущим становится первый из добавленных; иначе текущий трек не трогаем
-        if !tracks.is_empty() {
+        // Пока идёт добавление, кадры нужны и без действий пользователя:
+        // иначе прогресс обновлялся бы только при движении мыши
+        if !self.loaders.is_empty() {
+            ctx.request_repaint_after(LOADER_POLL_INTERVAL);
+        }
+    }
+
+    /// Кладёт добавленные треки в конец списка — все разом
+    fn apply_loaded(&mut self, finished: Finished) {
+        if !finished.tracks.is_empty() {
+            // Если ничего ещё не выбрано, текущим становится первый из добавленных;
+            // иначе текущий трек не трогаем
             let first_new = self.controller.player().track_list.tracks.len();
             let nothing_selected = self.controller.player().track_list.current_index.is_none();
-            self.controller.append_tracks(tracks);
+            self.controller.append_tracks(finished.tracks);
             if nothing_selected && let Err(e) = self.controller.select(first_new) {
-                errors.push(e);
+                self.error = Some(e);
             }
         }
 
-        self.error = (!errors.is_empty()).then(|| errors.join("\n"));
+        if finished.total == Some(0) {
+            self.error = Some("No supported audio files found".into());
+        } else if !finished.errors.is_empty() {
+            self.error = Some(summarize_errors(&finished.errors));
+        }
+    }
+
+    /// Отменяет текущее добавление: уже прочитанные треки не добавляются
+    fn cancel_loading(&mut self) {
+        self.loaders.pop_front();
+        self.loader_shown_at = None;
     }
 
     fn toggle_play(&mut self) {
@@ -131,7 +195,7 @@ impl PlayerApp {
             .on_hover_text("Open files")
             .clicked()
         {
-            self.add_tracks();
+            self.add_files();
         }
     }
 
@@ -321,7 +385,36 @@ impl PlayerApp {
     /// Содержимое самой левой боковой панели
     fn render_sidebar(&mut self, ui: &mut Ui) {
         egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
-            ui_components::block_title(ui, "Library", Align::Center, TEXT);
+            let row = ui_components::block_title(ui, "Library", Align::LEFT, TEXT);
+
+            // «+» прижат к правому краю строки, заголовок при этом остаётся по центру
+            let add_rect = Rect::from_center_size(
+                pos2(row.right() - ADD_BUTTON_SIZE / 2.0, row.center().y),
+                vec2(ADD_BUTTON_SIZE, ADD_BUTTON_SIZE),
+            );
+            let add = ui_components::icon_button(
+                ui,
+                add_rect,
+                ui_components::HitShape::Circle,
+                "add",
+                true,
+            );
+            paint_add(ui, add_rect, add.hover);
+
+            // Меню под «+», выровнено по его правому краю. Открывается и закрывается
+            // по нашему `clicked` — он учитывает только клики внутри круга
+            egui::Popup::menu(&add.response)
+                .open_memory(add.clicked.then_some(egui::SetOpenCommand::Toggle))
+                .align(egui::RectAlign::BOTTOM_END)
+                .gap(4.0)
+                .show(|ui| {
+                    if ui.button("Add files").clicked() {
+                        self.add_files();
+                    }
+                    if ui.button("Add folder").clicked() {
+                        self.add_folder();
+                    }
+                });
         });
     }
 
@@ -343,7 +436,7 @@ impl PlayerApp {
             // Повторы прижаты вправо. Включена может быть только одна из кнопок —
             // это обеспечивает сам RepeatMode
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = REPEAT_BUTTON_GAP;
+                ui.spacing_mut().item_spacing.x = ICON_BUTTON_GAP;
                 // В right_to_left первой добавляется самая правая кнопка
                 for (mode, id_salt, tooltip) in [
                     (RepeatMode::All, "repeat_all", "Repeat all"),
@@ -362,140 +455,61 @@ impl PlayerApp {
     }
 
     fn render_track_list(&mut self, ui: &mut Ui) {
-        // Пока `track_list` заимствован, менять плеер нельзя — запоминаем клик и обрабатываем после цикла
-        let mut clicked = None;
         let current = self.controller.player().track_list.current_index;
+        let track_count = self.controller.player().track_list.tracks.len();
         // Вся область панели — запоминаем до заголовка, чтобы «No tracks» встал по её центру
         let panel_rect = ui.max_rect();
         // Отступы задаёт Frame: у результата vertical_centered/ScrollArea::show их нет
         egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
-            let row = ui_components::block_title(ui, "Playlist", Align::Center, TEXT);
-
-            // «+» прижат к правому краю строки, заголовок при этом остаётся по центру
-            let add_rect = Rect::from_center_size(
-                pos2(row.right() - ADD_BUTTON_SIZE / 2.0, row.center().y),
-                vec2(ADD_BUTTON_SIZE, ADD_BUTTON_SIZE),
-            );
-            let add = ui_components::icon_button(
-                ui,
-                add_rect,
-                ui_components::HitShape::Circle,
-                "add_tracks",
-                true,
-            );
-            paint_add(ui, add_rect, add.hover);
-            add.response.on_hover_text("Open files");
-            if add.clicked {
-                self.add_tracks();
-            }
+            ui_components::block_title(ui, "Playlist", Align::LEFT, TEXT);
         });
 
-        // Сверху без отступа — его уже дал заголовок
-        let list_margin = egui::Margin {
-            left: 16,
-            right: 16,
-            top: 0,
-            bottom: 16,
-        };
         // Заглушка по центру всей панели, а не места под заголовком — иначе она
         // съезжает вниз на его высоту
-        if self.controller.player().track_list.tracks.is_empty() {
-            ui.painter().text(
-                panel_rect.center(),
-                Align2::CENTER_CENTER,
-                "No tracks",
-                FontId::proportional(14.0),
-                TEXT_FAINT,
-            );
+        if track_count == 0 {
+            if self.loaders.is_empty() {
+                ui.painter().text(
+                    panel_rect.center(),
+                    Align2::CENTER_CENTER,
+                    "No tracks",
+                    FontId::proportional(14.0),
+                    TEXT_FAINT,
+                );
+            }
             return;
         }
 
-        egui::ScrollArea::vertical().show(ui, |ui| {
-            // Frame внутри ScrollArea: полоса прокрутки остаётся у края панели,
-            // а отступ прокручивается вместе со списком
-            egui::Frame::new().inner_margin(list_margin).show(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = TRACK_ROW_GAP;
-
-                for (index, track) in self
-                    .controller
-                    .player()
-                    .track_list
-                    .tracks
-                    .iter()
-                    .enumerate()
-                {
-                    // Стабильный id строки: по нему egui хранит состояние анимаций
-                    let row_id = ui.scope_id().with(("track_row", index));
-                    let is_current = current == Some(index);
-
-                    // Активность плавно меняется от 0.0 до 1.0: фон и цвет текста
-                    // перетекают, а не переключаются мгновенно
-                    let active = ui.ctx().animate_bool_with_time_and_easing(
-                        row_id.with("active"),
-                        is_current,
-                        ui_components::TRACK_ACTIVE_FADE_SECS,
-                        egui::emath::easing::cubic_in_out,
-                    );
-                    let text_color = TEXT_MUTED.lerp_to_gamma(TEXT, active);
-
-                    // begin/paint вместо show: фон рисуется после содержимого (под ним),
-                    // поэтому его цвет можно выбрать, уже зная, наведён ли курсор на строку
-                    let mut row_frame = egui::Frame::new()
-                        .corner_radius(8)
-                        .inner_margin(6.0)
-                        .begin(ui);
-
-                    // Аналог justify-content: space-between: время прижато вправо,
-                    // название занимает оставшееся место слева и обрезается с «…»
-                    row_frame.content_ui.horizontal(|ui| {
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            let duration = format_secs(track.duration_secs as f32);
-                            let duration = RichText::new(duration).size(14.0).color(text_color);
-                            ui.add(Label::new(duration).selectable(false));
-
-                            ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
-                                let title = if track.artist.is_empty() {
-                                    track.title.clone()
-                                } else {
-                                    format!("{} — {}", track.title, track.artist)
-                                };
-                                let title = RichText::new(title).size(14.0).color(text_color);
-                                ui.add(Label::new(title).selectable(false).truncate());
-                            });
-                        });
-                    });
-
-                    let row_rect = row_frame.allocate_space(ui).rect;
-                    let row = ui
-                        .interact(row_rect, row_id, Sense::click())
-                        .on_hover_cursor(CursorIcon::PointingHand);
-
-                    // Неактивный трек под курсором плавно подсвечиваем
-                    let hover = ui.ctx().animate_bool_with_time_and_easing(
-                        row_id.with("hover"),
-                        row.hovered() && !is_current,
-                        ui_components::HOVER_FADE_SECS,
-                        egui::emath::easing::cubic_out,
-                    );
-                    let hover_fill = HIGHLIGHT.gamma_multiply(hover);
-                    // Активный фон проявляется поверх подсветки наведения
-                    row_frame.frame.fill = hover_fill.lerp_to_gamma(HIGHLIGHT_STRONG, active);
-                    row_frame.paint(ui);
-
-                    if row.clicked() {
+        // Пока `track_list` заимствован, менять плеер нельзя — запоминаем клик и обрабатываем после
+        let mut clicked = None;
+        // show_rows берёт зазор между строками из Ui, в котором вызван
+        ui.spacing_mut().item_spacing.y = TRACK_ROW_GAP;
+        egui::ScrollArea::vertical()
+            // Отступ задаётся самой ScrollArea: полоса прокрутки остаётся у края панели,
+            // а отступ прокручивается вместе со списком. Frame внутри show_rows не годится —
+            // его отступ сбил бы расчёт позиций строк
+            .content_margin(egui::Margin {
+                left: 16,
+                right: 16,
+                top: 0,
+                bottom: 16,
+            })
+            // Рисуются только видимые строки: тысячи треков не тормозят прокрутку и анимации
+            .show_rows(ui, TRACK_ROW_HEIGHT, track_count, |ui, rows| {
+                let tracks = &self.controller.player().track_list.tracks;
+                for index in rows {
+                    if track_row(ui, index, &tracks[index], current == Some(index)) {
                         clicked = Some(index);
                     }
                 }
             });
 
-            if let Some(index) = clicked {
-                let result = self
-                    .controller
-                    .select(index)
-                    .and_then(|()| self.controller.play());
-                self.set_result(result);
-            }
-        });
+        if let Some(index) = clicked {
+            let result = self
+                .controller
+                .select(index)
+                .and_then(|()| self.controller.play());
+            self.set_result(result);
+        }
     }
 }
 
@@ -513,6 +527,8 @@ impl eframe::App for PlayerApp {
             self.error = Some(e);
         }
 
+        self.poll_loaders(ui.ctx());
+
         // Пока трек играет, обновляем время и ползунок
         if self.controller.player().state == PlayerState::Playing {
             ui.ctx().request_repaint_after(Duration::from_millis(100));
@@ -526,8 +542,8 @@ impl eframe::App for PlayerApp {
         // панелей. Поэтому минимум обеспечивают их максимумы: каждая может занять только то,
         // что останется после минимумов всего, что ещё не размещено. При сужении окна боковые
         // панели сжимаются первыми, а центральная не становится уже CONTENT_MIN_WIDTH
-        let sidebar_max_width = (ui.available_width() - TRACK_LIST_MIN_WIDTH - CONTENT_MIN_WIDTH)
-            .clamp(TRACK_LIST_MIN_WIDTH, TRACK_LIST_MAX_WIDTH);
+        let sidebar_max_width = (ui.available_width() - SIDE_PANEL_MIN_WIDTH - CONTENT_MIN_WIDTH)
+            .clamp(SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH);
 
         // egui подсвечивает край панели белой линией при наведении и перетаскивании —
         // толщину берёт из hovered/active fg_stroke родительского Ui. Вместо неё у нас своя
@@ -544,8 +560,8 @@ impl eframe::App for PlayerApp {
         // Библиотека — у левого края окна
         let sidebar = egui::Panel::left("library_sidebar")
             .frame(egui::Frame::new())
-            .default_size(200.0)
-            .size_range(TRACK_LIST_MIN_WIDTH..=sidebar_max_width)
+            .default_size(SIDEBAR_DEFAULT_WIDTH)
+            .size_range(SIDE_PANEL_MIN_WIDTH..=sidebar_max_width)
             .resizable(true)
             .show_separator_line(false)
             .show(ui, |ui| {
@@ -554,13 +570,13 @@ impl eframe::App for PlayerApp {
 
         // Считается после боковой панели: available_width уже без её ширины
         let track_list_max_width = (ui.available_width() - CONTENT_MIN_WIDTH)
-            .clamp(TRACK_LIST_MIN_WIDTH, TRACK_LIST_MAX_WIDTH);
+            .clamp(SIDE_PANEL_MIN_WIDTH, SIDE_PANEL_MAX_WIDTH);
 
         // Список треков — у правого края окна
         let track_list = egui::Panel::right("track_list")
             .frame(egui::Frame::new())
-            .default_size(240.0)
-            .size_range(TRACK_LIST_MIN_WIDTH..=track_list_max_width)
+            .default_size(TRACK_LIST_DEFAULT_WIDTH)
+            .size_range(SIDE_PANEL_MIN_WIDTH..=track_list_max_width)
             .resizable(true)
             .show_separator_line(false)
             .show(ui, |ui| {
@@ -606,13 +622,6 @@ impl eframe::App for PlayerApp {
             .show(ui, |ui| {
                 egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
                     ui.vertical_centered_justified(|ui| {
-                        // Ошибка видна всегда, а не только пока список пуст: она бывает
-                        // и при воспроизведении. Идёт первой, чтобы кнопка «Open files»
-                        // центрировалась в месте, которое осталось под ней
-                        if let Some(error) = &self.error {
-                            ui.label(RichText::new(error).color(RED));
-                        }
-
                         if self.controller.player().track_list.tracks.is_empty() {
                             self.render_add_tracks_block(ui);
                         } else {
@@ -622,16 +631,99 @@ impl eframe::App for PlayerApp {
                 });
             });
 
+        // Плашки поверх всего окна, по центру сверху: прогресс добавления (только когда
+        // poll_loaders решил его показать) и под ним ошибка — пока не нажмут «OK»
+        let mut banner_top = ui_components::BANNER_TOP;
+        if self.loader_shown_at.is_some()
+            && let Some(loader) = self.loaders.front()
+        {
+            let (cancel, bottom) = ui_components::loading_banner(ui.ctx(), loader.progress());
+            banner_top = bottom - ui.ctx().content_rect().top() + ui_components::BANNER_GAP;
+            if cancel {
+                self.cancel_loading();
+            }
+        }
+        if let Some(error) = &self.error
+            && ui_components::error_banner(ui.ctx(), error, banner_top)
+        {
+            self.error = None;
+        }
+
         // Линии ресайза — последними, поверх всего, на границе панелей — там, где egui даёт тянуть край
         let sidebar_rect = sidebar.response.rect;
-        paint_resize_line(ui, sidebar_rect.right(), sidebar_rect.y_range());
+        ui_components::paint_resize_line(ui, sidebar_rect.right(), sidebar_rect.y_range());
         let track_list_rect = track_list.response.rect;
-        paint_resize_line(ui, track_list_rect.left(), track_list_rect.y_range());
+        ui_components::paint_resize_line(ui, track_list_rect.left(), track_list_rect.y_range());
     }
 }
 
-/// Линия изменения ширины боковой панели — на всю высоту границы панелей, видна всегда
-fn paint_resize_line(ui: &Ui, edge_x: f32, y_range: Rangef) {
-    ui.painter()
-        .vline(edge_x, y_range, Stroke::new(RESIZE_LINE_WIDTH, RESIZE_LINE));
+/// Строка списка треков фиксированной высоты: название слева (обрезается с «…»),
+/// длительность справа. Возвращает `true`, если по строке кликнули.
+fn track_row(ui: &mut Ui, index: usize, track: &Track, is_current: bool) -> bool {
+    let (row_rect, _) =
+        ui.allocate_exact_size(vec2(ui.available_width(), TRACK_ROW_HEIGHT), Sense::hover());
+    // Стабильный id строки: по нему egui хранит состояние анимаций. Id от позиции
+    // не годится — при прокрутке строки меняют место
+    let row_id = ui.scope_id().with(("track_row", index));
+    let row = ui
+        .interact(row_rect, row_id, Sense::click())
+        .on_hover_cursor(CursorIcon::PointingHand);
+
+    // Активность и наведение меняются плавно: фон и цвет текста перетекают
+    let active = ui.ctx().animate_bool_with_time_and_easing(
+        row_id.with("active"),
+        is_current,
+        ui_components::TRACK_ACTIVE_FADE_SECS,
+        egui::emath::easing::cubic_in_out,
+    );
+    let hover = ui.ctx().animate_bool_with_time_and_easing(
+        row_id.with("hover"),
+        row.hovered() && !is_current,
+        ui_components::HOVER_FADE_SECS,
+        egui::emath::easing::cubic_out,
+    );
+    // Фон рисуется до текста, поэтому оказывается под ним
+    let fill = HIGHLIGHT
+        .gamma_multiply(hover)
+        .lerp_to_gamma(HIGHLIGHT_STRONG, active);
+    ui.painter().rect_filled(row_rect, 8, fill);
+
+    let text_color = TEXT_MUTED.lerp_to_gamma(TEXT, active);
+    let content = row_rect.shrink2(vec2(TRACK_ROW_PADDING, 0.0));
+    // Аналог justify-content: space-between: время прижато вправо,
+    // название занимает оставшееся место слева
+    let mut content_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(content)
+            .layout(Layout::right_to_left(Align::Center)),
+    );
+    let duration = RichText::new(format_secs(track.duration_secs as f32))
+        .size(14.0)
+        .color(text_color);
+    content_ui.add(Label::new(duration).selectable(false));
+    content_ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
+        let title = if track.artist.is_empty() {
+            track.title.clone()
+        } else {
+            format!("{} — {}", track.title, track.artist)
+        };
+        let title = RichText::new(title).size(14.0).color(text_color);
+        ui.add(Label::new(title).selectable(false).truncate());
+    });
+
+    row.clicked()
+}
+
+/// Текст ошибки добавления: первые несколько файлов и сколько ещё не добавилось —
+/// при тысячах файлов полный список не поместился бы на экран
+fn summarize_errors(errors: &[String]) -> String {
+    const SHOWN: usize = 3;
+    let mut text = errors[..errors.len().min(SHOWN)].join("\n");
+    if errors.len() > SHOWN {
+        text += &format!(
+            "\n…and {} more files could not be added",
+            errors.len() - SHOWN
+        );
+    }
+    text
 }

@@ -4,6 +4,7 @@
 
 mod app;
 mod audio;
+mod loader;
 mod metadata;
 mod player;
 mod theme;
@@ -21,13 +22,14 @@ fn main() -> eframe::Result {
     const ICON_PNG: &[u8] = include_bytes!("../assets/icon_macos.png");
     #[cfg(not(target_os = "macos"))]
     const ICON_PNG: &[u8] = include_bytes!("../assets/icon_windows.png");
-    let icon = eframe::icon_data::from_png_bytes(ICON_PNG).expect("иконка — некорректный PNG");
+    let icon = eframe::icon_data::from_png_bytes(ICON_PNG).expect("app icon is not a valid PNG");
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([640.0, 480.0])
-            // Ширина: минимумы боковой панели 150 + списка треков 150 + центральной области 260 = 560, плюс запас
-            .with_min_inner_size([600.0, 400.0])
+            // Стартовые ширины: библиотека 240 + центр + список треков 300 — центру остаётся ~440
+            .with_inner_size([980.0, 620.0])
+            // Минимумы: боковые панели по 180 + центральная область 260 = 620, плюс запас
+            .with_min_inner_size([640.0, 400.0])
             .with_icon(icon)
             // Прозрачное окно: под ним система рисует настоящее размытие (см. window_glass.rs)
             .with_transparent(true),
@@ -40,7 +42,7 @@ fn main() -> eframe::Result {
         Box::new(|cc| {
             cc.egui_ctx.set_theme(egui::Theme::Dark);
             if let Err(e) = window_glass::apply(cc) {
-                eprintln!("Не удалось включить размытие под окном: {e}");
+                eprintln!("Could not enable the window blur: {e}");
             }
             Ok(Box::new(app::PlayerApp::new()))
         }),

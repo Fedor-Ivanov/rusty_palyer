@@ -35,7 +35,7 @@ pub fn spawn_audio_thread(position_ms: Arc<AtomicU64>) -> (Sender<AudioCmd>, Rec
     thread::spawn(move || {
         // Устройство должно жить всё время воспроизведения.
         let device = DeviceSinkBuilder::open_default_sink()
-            .map_err(|e| format!("Не удалось открыть аудиоустройство: {e}"));
+            .map_err(|e| format!("Could not open the audio device: {e}"));
 
         let mut player: Option<AudioPlayer> = None;
 
@@ -54,10 +54,10 @@ pub fn spawn_audio_thread(position_ms: Arc<AtomicU64>) -> (Sender<AudioCmd>, Rec
                         let device = device.as_ref().map_err(|e| e.clone())?;
 
                         let file = File::open(&path)
-                            .map_err(|e| format!("Не удалось открыть файл: {e}"))?;
+                            .map_err(|e| format!("Could not open the file: {e}"))?;
 
                         let source = Decoder::try_from(file)
-                            .map_err(|e| format!("Не удалось декодировать: {e}"))?;
+                            .map_err(|e| format!("Could not decode the file: {e}"))?;
 
                         let new_player = AudioPlayer::connect_new(device.mixer());
                         new_player.append(source);
@@ -65,7 +65,7 @@ pub fn spawn_audio_thread(position_ms: Arc<AtomicU64>) -> (Sender<AudioCmd>, Rec
                         if !start_at.is_zero() {
                             new_player
                                 .try_seek(start_at)
-                                .map_err(|e| format!("Не удалось перемотать трек: {e}"))?;
+                                .map_err(|e| format!("Could not seek the track: {e}"))?;
                         }
 
                         Ok(new_player)
@@ -110,7 +110,7 @@ pub fn spawn_audio_thread(position_ms: Arc<AtomicU64>) -> (Sender<AudioCmd>, Rec
                     if let Some(p) = &player
                         && let Err(err) = p.try_seek(pos)
                     {
-                        eprintln!("Не удалось перемотать трек: {err}");
+                        eprintln!("Could not seek the track: {err}");
                     }
                 }
 
