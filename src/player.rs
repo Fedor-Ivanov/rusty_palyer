@@ -169,7 +169,7 @@ impl PlayerController {
     }
 
     /// Делает трек текущим. Воспроизведение не начинается — для этого есть `play`.
-    fn set_track(&mut self, track: Track) -> Result<(), String> {
+    fn set_current_track(&mut self, track: Track) -> Result<(), String> {
         // Если что-то уже играло, останавливаем: выбран другой трек
         self.audio.send(AudioCmd::Stop).map_err(|e| e.to_string())?;
 
@@ -221,7 +221,7 @@ impl PlayerController {
             .get(index)
             .cloned()
             .ok_or("Трека с таким номером нет в списке")?;
-        self.set_track(track)?;
+        self.set_current_track(track)?;
         self.player.track_list.current_index = Some(index);
         Ok(())
     }

@@ -105,7 +105,7 @@ impl PlayerApp {
 
     /// Кнопка по центру всего оставшегося места
     fn render_add_tracks_block(&mut self, ui: &mut Ui) {
-        let text = RichText::new("Add tracks").size(18.0).color(GRAY_4);
+        let text = RichText::new("Open files").size(18.0).color(GRAY_4);
 
         // Layout в egui не центрирует по вертикали, поэтому считаем размер кнопки
         // заранее и ставим её в центр свободной области сами
@@ -125,7 +125,7 @@ impl PlayerApp {
         if ui
             .put(button_rect, open)
             .on_hover_cursor(CursorIcon::PointingHand)
-            .on_hover_text("Add tracks")
+            .on_hover_text("Open files")
             .clicked()
         {
             self.add_tracks();
@@ -378,7 +378,7 @@ impl PlayerApp {
                 true,
             );
             paint_add(ui, add_rect, add.hover);
-            add.response.on_hover_text("Add tracks");
+            add.response.on_hover_text("Open files");
             if add.clicked {
                 self.add_tracks();
             }
