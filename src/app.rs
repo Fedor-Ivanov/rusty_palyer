@@ -79,8 +79,8 @@ impl PlayerApp {
         // Треки добавляются в конец очереди. Если ничего ещё не выбрано,
         // текущим становится первый из добавленных; иначе текущий трек не трогаем
         if !tracks.is_empty() {
-            let first_new = self.controller.player().track_list.len();
-            let nothing_selected = self.controller.player().current_index.is_none();
+            let first_new = self.controller.player().track_list.tracks.len();
+            let nothing_selected = self.controller.player().track_list.current_index.is_none();
             self.controller.append_tracks(tracks);
             if nothing_selected && let Err(e) = self.controller.select(first_new) {
                 errors.push(e);
@@ -307,7 +307,7 @@ impl PlayerApp {
     fn render_track_list(&mut self, ui: &mut Ui) {
         // Пока `track_list` заимствован, менять плеер нельзя — запоминаем клик и обрабатываем после цикла
         let mut clicked = None;
-        let current = self.controller.player().current_index;
+        let current = self.controller.player().track_list.current_index;
         // Вся область панели — запоминаем до заголовка, чтобы «No tracks» встал по её центру
         let panel_rect = ui.max_rect();
         // Отступы задаёт Frame: у результата vertical_centered/ScrollArea::show их нет
@@ -341,7 +341,7 @@ impl PlayerApp {
         };
         // Заглушка по центру всей панели, а не места под заголовком — иначе она
         // съезжает вниз на его высоту
-        if self.controller.player().track_list.is_empty() {
+        if self.controller.player().track_list.tracks.is_empty() {
             ui.painter().text(
                 panel_rect.center(),
                 Align2::CENTER_CENTER,
@@ -358,7 +358,14 @@ impl PlayerApp {
             egui::Frame::new().inner_margin(list_margin).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = TRACK_ROW_GAP;
 
-                for (index, track) in self.controller.player().track_list.iter().enumerate() {
+                for (index, track) in self
+                    .controller
+                    .player()
+                    .track_list
+                    .tracks
+                    .iter()
+                    .enumerate()
+                {
                     // Стабильный id строки: по нему egui хранит состояние анимаций
                     let row_id = ui.scope_id().with(("track_row", index));
                     let is_current = current == Some(index);
@@ -464,11 +471,26 @@ impl eframe::App for PlayerApp {
                 // Panel подгоняет ширину под содержимое, поэтому без этого она сжимается
                 // обратно до минимума сразу после перетаскивания края
                 ui.set_min_width(ui.available_width());
+
+                // Блок прижат к низу панели. Добавляется до списка: панель сразу забирает
+                // своё место, а ScrollArea получает только оставшееся и под блок не заходит
+                egui::Panel::bottom("track_list_bottom")
+                    // Без своего frame панель залила бы себя светлым фоном по умолчанию
+                    .frame(egui::Frame::new().inner_margin(16.0))
+                    .resizable(false)
+                    .show_separator_line(false)
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            // Содержимое блока
+                            ui.label("text");
+                        });
+                    });
+
                 self.render_track_list(ui);
             });
 
         // Панели нужно добавлять до CentralPanel — он занимает всё оставшееся место
-        egui::Panel::bottom("footer")
+        egui::Panel::bottom("audio_controls")
             .frame(egui::Frame::new().fill(GRAY_2).inner_margin(16.0))
             .show_separator_line(false)
             .show(ui, |ui| {
@@ -490,7 +512,7 @@ impl eframe::App for PlayerApp {
                         ui.label(RichText::new(error).color(RED));
                     }
 
-                    if self.controller.player().track_list.is_empty() {
+                    if self.controller.player().track_list.tracks.is_empty() {
                         self.render_add_tracks_block(ui);
                     } else {
                         self.render_current_track_info(ui);
