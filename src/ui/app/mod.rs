@@ -5,8 +5,7 @@ mod controls;
 mod library_panel;
 mod loading;
 mod now_playing;
-mod selection;
-mod track_list;
+mod playlist_panel;
 
 use eframe::egui::{self, Ui};
 use std::{
@@ -14,10 +13,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use self::selection::{Marquee, Selection};
-use super::{theme::WINDOW_TINT, widgets};
+use self::loading::PendingLoad;
+use super::{
+    theme::WINDOW_TINT,
+    widgets::{self, TrackListView},
+};
 use crate::{
-    library::loader::Loader,
+    library::Library,
     playback::{PlayerController, PlayerState},
 };
 
@@ -38,25 +40,36 @@ pub struct PlayerApp {
     drag_secs: Option<f32>,
     /// Фоновые добавления треков. Обрабатываются по очереди: треки второго появятся
     /// в списке после треков первого, даже если он закончит раньше
-    loaders: VecDeque<Loader>,
+    loaders: VecDeque<PendingLoad>,
     /// С какого момента виден прогресс текущего добавления; `None` — не виден
     loader_shown_at: Option<Instant>,
-    /// Выделенные треки в списке
-    selection: Selection,
-    /// Выделение областью мыши, пока его тянут
-    marquee: Option<Marquee>,
+    /// Треки, сохранённые между запусками
+    library: Library,
+    library_view: TrackListView,
+    playlist_view: TrackListView,
+    /// Какой список получает клавиши (⌘A, Esc, Delete) — тот, с которым работали последним
+    focus: ListFocus,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ListFocus {
+    Library,
+    Playlist,
 }
 
 impl PlayerApp {
     pub fn new() -> Self {
+        let (library, error) = Library::load(eframe::storage_dir(crate::APP_NAME));
         Self {
             controller: PlayerController::new(),
-            error: None,
+            error,
             drag_secs: None,
             loaders: VecDeque::new(),
             loader_shown_at: None,
-            selection: Selection::default(),
-            marquee: None,
+            library,
+            library_view: TrackListView::new("library"),
+            playlist_view: TrackListView::new("playlist"),
+            focus: ListFocus::Playlist,
         }
     }
 
@@ -121,7 +134,7 @@ impl eframe::App for PlayerApp {
             .resizable(true)
             .show_separator_line(false)
             .show(ui, |ui| {
-                self.render_sidebar(ui);
+                self.render_library(ui);
             });
 
         // Считается после боковой панели: available_width уже без её ширины
@@ -151,7 +164,7 @@ impl eframe::App for PlayerApp {
                         self.render_playback_modes(ui);
                     });
 
-                self.render_track_list(ui);
+                self.render_playlist(ui);
             });
 
         let widgets = &mut ui.style_mut().visuals.widgets;
@@ -191,9 +204,9 @@ impl eframe::App for PlayerApp {
         // poll_loaders решил его показать) и под ним ошибка — пока не нажмут «OK»
         let mut banner_top = widgets::BANNER_TOP;
         if self.loader_shown_at.is_some()
-            && let Some(loader) = self.loaders.front()
+            && let Some(pending) = self.loaders.front()
         {
-            let (cancel, bottom) = widgets::loading_banner(ui.ctx(), loader.progress());
+            let (cancel, bottom) = widgets::loading_banner(ui.ctx(), pending.loader.progress());
             banner_top = bottom - ui.ctx().content_rect().top() + widgets::BANNER_GAP;
             if cancel {
                 self.cancel_loading();

@@ -25,7 +25,9 @@ symphonia = { version = "0.6.1", features = [
 ] }
 rodio = "0.23.0"
 egui = "0.37.0"
-eframe = "0.37"
+# persistence — ради eframe::storage_dir (папка данных для библиотеки); заодно eframe
+# запоминает размер окна и ширину панелей между запусками
+eframe = { version = "0.37", features = ["persistence"] }
 rfd = "0.17.2"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 fastrand = "2"

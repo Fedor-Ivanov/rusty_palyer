@@ -8,6 +8,9 @@ mod ui;
 
 use eframe::egui;
 
+/// Имя приложения: заголовок окна и имя папки с данными (библиотекой)
+pub const APP_NAME: &str = "Rusty Player";
+
 fn main() -> eframe::Result {
     // Иконка вшивается в бинарник при сборке, отдельный файл рядом не нужен.
     // На macOS — сквиркл по шаблону Apple, иначе — пластинка на прозрачном фоне
@@ -30,7 +33,7 @@ fn main() -> eframe::Result {
     };
 
     eframe::run_native(
-        "Rusty Player",
+        APP_NAME,
         options,
         Box::new(|cc| {
             cc.egui_ctx.set_theme(egui::Theme::Dark);

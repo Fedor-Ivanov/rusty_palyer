@@ -1,9 +1,9 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use super::{metadata::get_file_metadata, scan::check_supported};
 
-#[derive(Serialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Track {
     pub path: PathBuf,
     pub title: String,
@@ -11,7 +11,9 @@ pub struct Track {
     pub duration_secs: u64,
     pub album: String,
     /// Читается только у текущего трека (см. `PlayerController::set_current_track`): обложки всего
-    /// списка заняли бы слишком много памяти. У треков в списке всегда `None`
+    /// списка заняли бы слишком много памяти. У треков в списке всегда `None`.
+    /// В файл библиотеки не сохраняется
+    #[serde(skip)]
     pub album_cover: Option<Vec<u8>>,
 }
 

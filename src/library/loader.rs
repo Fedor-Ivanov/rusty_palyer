@@ -6,7 +6,7 @@
 //! Отменить добавление — просто уронить `Loader`: потоки заметят закрытый канал и остановятся.
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     path::PathBuf,
     sync::{
         Arc,
@@ -30,8 +30,9 @@ pub enum Source {
 }
 
 enum Message {
-    /// Сколько файлов будет обработано — известно после обхода папки
-    Total(usize),
+    /// Сколько файлов будет обработано и сколько пропущено, потому что они уже есть
+    /// у получателя, — известно после обхода папки
+    Total(usize, usize),
     /// Результат для файла с номером `usize` в исходном порядке
     Loaded(usize, Result<Track, String>),
     /// Папку не удалось прочитать
@@ -42,6 +43,7 @@ pub struct Loader {
     messages: Receiver<Message>,
     started: Instant,
     total: Option<usize>,
+    skipped: usize,
     /// Номер следующего результата по порядку — треки собираются строго в исходном порядке
     next: usize,
     /// Результаты, пришедшие раньше своей очереди: потоки работают параллельно
@@ -52,13 +54,16 @@ pub struct Loader {
 }
 
 impl Loader {
-    pub fn start(source: Source) -> Self {
+    /// Начинает добавление. Файлы из `skip` пропускаются без чтения — например, те,
+    /// что уже есть в библиотеке
+    pub fn start(source: Source, skip: HashSet<PathBuf>) -> Self {
         let (tx, messages) = mpsc::channel();
-        thread::spawn(move || run(source, tx));
+        thread::spawn(move || run(source, skip, tx));
         Self {
             messages,
             started: Instant::now(),
             total: None,
+            skipped: 0,
             next: 0,
             pending: BTreeMap::new(),
             tracks: Vec::new(),
@@ -71,7 +76,10 @@ impl Loader {
     pub fn update(&mut self) {
         loop {
             match self.messages.try_recv() {
-                Ok(Message::Total(total)) => self.total = Some(total),
+                Ok(Message::Total(total, skipped)) => {
+                    self.total = Some(total);
+                    self.skipped = skipped;
+                }
                 Ok(Message::Loaded(index, result)) => {
                     self.pending.insert(index, result);
                 }
@@ -124,6 +132,7 @@ impl Loader {
             tracks: self.tracks,
             errors: self.errors,
             total: self.total,
+            skipped: self.skipped,
         }
     }
 }
@@ -134,10 +143,12 @@ pub struct Finished {
     pub errors: Vec<String>,
     /// `None`, если папку не удалось прочитать
     pub total: Option<usize>,
+    /// Сколько файлов пропущено, потому что они уже есть у получателя
+    pub skipped: usize,
 }
 
-fn run(source: Source, tx: Sender<Message>) {
-    let paths = match source {
+fn run(source: Source, skip: HashSet<PathBuf>, tx: Sender<Message>) {
+    let mut paths = match source {
         Source::Files(paths) => paths,
         Source::Folder(dir) => match find_audio_files(&dir) {
             Ok(paths) => paths,
@@ -147,7 +158,9 @@ fn run(source: Source, tx: Sender<Message>) {
             }
         },
     };
-    let _ = tx.send(Message::Total(paths.len()));
+    let found = paths.len();
+    paths.retain(|path| !skip.contains(path));
+    let _ = tx.send(Message::Total(paths.len(), found - paths.len()));
 
     // Потоки берут файлы по очереди из общего счётчика: быстрые файлы не ждут медленных
     let paths = Arc::new(paths);
@@ -215,7 +228,8 @@ mod tests {
         // Битый файл с подходящим расширением — должен попасть в ошибки, а не в список
         fs::write(dir.join("99.mp3"), b"not audio").unwrap();
 
-        let mut loader = Loader::start(Source::Folder(dir.clone()));
+        let skip = [dir.join("05.wav")].into_iter().collect();
+        let mut loader = Loader::start(Source::Folder(dir.clone()), skip);
         for _ in 0..500 {
             loader.update();
             if loader.is_finished() {
@@ -226,16 +240,19 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
 
         assert!(loader.is_finished());
-        assert_eq!(loader.progress(), Some((41, 41)));
+        // 05.wav был в `skip` — его не читали
+        assert_eq!(loader.progress(), Some((40, 40)));
         let result = loader.finish();
         let loaded: Vec<String> = result
             .tracks
             .iter()
             .map(|t| t.path.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(loaded, names);
+        let expected: Vec<&String> = names.iter().filter(|n| *n != "05.wav").collect();
+        assert_eq!(loaded.iter().collect::<Vec<_>>(), expected);
         assert_eq!(result.errors.len(), 1);
         assert!(result.errors[0].starts_with("99.mp3"));
-        assert_eq!(result.total, Some(41));
+        assert_eq!(result.total, Some(40));
+        assert_eq!(result.skipped, 1);
     }
 }

@@ -2,7 +2,7 @@
 
 use eframe::egui::{self, CursorIcon, Rect, RichText, Ui};
 
-use super::PlayerApp;
+use super::{PlayerApp, loading::Destination};
 use crate::ui::{
     format::format_secs,
     theme::{TEXT, TEXT_MUTED},
@@ -35,7 +35,7 @@ impl PlayerApp {
             .on_hover_text("Open files")
             .clicked()
         {
-            self.add_files();
+            self.add_files(Destination::Playlist);
         }
     }
 

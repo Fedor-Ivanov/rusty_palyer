@@ -1,123 +1,119 @@
-//! Правая панель: виртуализированный список треков, выделение, контекстное меню,
-//! нижний блок с shuffle и повтором.
+//! Список треков — общий для библиотеки и плейлиста: виртуализация (рисуются только видимые
+//! строки), выделение кликами и областью мыши, клавиши, контекстное меню.
 
-use eframe::egui::{
-    self, Align, Align2, FontId, Key, Label, Layout, Rect, RichText, Sense, Ui, pos2, vec2,
-};
+use eframe::egui::{self, Align, Key, Label, Layout, Rect, RichText, Sense, Ui, pos2, vec2};
 use std::collections::BTreeSet;
 
-use super::{ADD_BUTTON_SIZE, Marquee, PlayerApp};
+use super::selection::{Marquee, Selection};
 use crate::{
     library::Track,
-    playback::RepeatMode,
     ui::{
         format::format_secs,
-        icons::{paint_repeat, paint_shuffle},
         theme::{
             HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, MARQUEE_FILL, MARQUEE_STROKE, TEXT,
             TEXT_FAINT, TEXT_MUTED, TRACK_ACTIVE_FADE_SECS,
         },
-        widgets,
     },
 };
 
-// Зазор между кнопками повтора в нижнем блоке списка
-const ICON_BUTTON_GAP: f32 = 4.0;
-// Строки списка треков: высота фиксированная — без неё список нельзя виртуализировать
-// (рисовать только видимые строки), так как позицию строки не вычислить без измерения
+// Строки: высота фиксированная — без неё список нельзя виртуализировать,
+// так как позицию строки не вычислить без измерения
 const TRACK_ROW_HEIGHT: f32 = 30.0;
 const TRACK_ROW_PADDING: f32 = 8.0;
 const TRACK_ROW_GAP: f32 = 6.0;
-// Толщина рамки выделенной строки
+// Толщина рамки выделенной строки и рамки выделения областью
 const SELECTION_STROKE_WIDTH: f32 = 1.5;
 // Скорость автопрокрутки при выделении областью: точек в секунду на каждую точку,
 // на которую курсор ушёл за край списка
 const MARQUEE_AUTOSCROLL_SPEED: f32 = 8.0;
 
-impl PlayerApp {
-    /// Нижний блок списка: слева shuffle, справа две кнопки повтора
-    pub(super) fn render_playback_modes(&mut self, ui: &mut Ui) {
-        let list = &self.controller.player().track_list;
-        let (shuffle, repeat) = (list.shuffle, list.repeat);
-        let size = vec2(ADD_BUTTON_SIZE, ADD_BUTTON_SIZE);
+/// Состояние одного списка между кадрами: выделение и выделение областью
+pub struct TrackListView {
+    /// Различает списки: у каждого свои id прокрутки и фона
+    id: &'static str,
+    selection: Selection,
+    marquee: Option<Marquee>,
+}
 
-        ui.horizontal(|ui| {
-            let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-            let (clicked, active, hover) =
-                widgets::toggle_button(ui, rect, "shuffle", shuffle, "Shuffle");
-            paint_shuffle(ui, rect, active, hover);
-            if clicked {
-                self.controller.toggle_shuffle();
-            }
+/// Что произошло со списком за кадр — решает вызывающий
+pub struct TrackListResponse {
+    /// Двойной клик по треку
+    pub activated: Option<usize>,
+    /// Нажали Delete или Backspace, пока список активен
+    pub delete: bool,
+    /// Со списком работали мышью — он становится активным для клавиатуры
+    pub interacted: bool,
+}
 
-            // Повторы прижаты вправо. Включена может быть только одна из кнопок —
-            // это обеспечивает сам RepeatMode
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                ui.spacing_mut().item_spacing.x = ICON_BUTTON_GAP;
-                // В right_to_left первой добавляется самая правая кнопка
-                for (mode, id_salt, tooltip) in [
-                    (RepeatMode::All, "repeat_all", "Repeat all"),
-                    (RepeatMode::One, "repeat_one", "Repeat one"),
-                ] {
-                    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
-                    let (clicked, active, hover) =
-                        widgets::toggle_button(ui, rect, id_salt, repeat == mode, tooltip);
-                    paint_repeat(ui, rect, mode == RepeatMode::One, active, hover);
-                    if clicked {
-                        self.controller.toggle_repeat(mode);
-                    }
-                }
-            });
-        });
+/// Что показать в строке
+pub struct RowState {
+    /// Играющий трек: подсвечен
+    pub current: bool,
+    /// Файла нет на диске: текст приглушён, при наведении — подсказка
+    pub missing: bool,
+}
+
+impl TrackListView {
+    pub fn new(id: &'static str) -> Self {
+        Self {
+            id,
+            selection: Selection::default(),
+            marquee: None,
+        }
     }
 
-    pub(super) fn render_track_list(&mut self, ui: &mut Ui) {
-        let current = self.controller.player().track_list.current_index;
-        let track_count = self.controller.player().track_list.tracks.len();
-        // Вся область панели — запоминаем до заголовка, чтобы «No tracks» встал по её центру
-        let panel_rect = ui.max_rect();
-        // Отступы задаёт Frame: у результата vertical_centered/ScrollArea::show их нет
-        egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
-            widgets::block_title(ui, "Playlist", Align::LEFT, TEXT);
-        });
+    pub fn selection(&self) -> &BTreeSet<usize> {
+        self.selection.indices()
+    }
 
-        // Заглушка по центру всей панели, а не места под заголовком — иначе она
-        // съезжает вниз на его высоту
+    /// Номера треков после удаления сдвигаются — старое выделение ни на что не указывает
+    pub fn clear_selection(&mut self) {
+        self.selection.clear();
+    }
+
+    /// Рисует список. `row_state` — что показать в строке по её номеру; `keyboard` — активен
+    /// ли список для клавиш (⌘A, Esc, Delete); `context_menu` рисует пункты меню по правому
+    /// клику и получает число выделенных треков.
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        tracks: &[Track],
+        row_state: impl Fn(usize) -> RowState,
+        keyboard: bool,
+        mut context_menu: impl FnMut(&mut Ui, usize),
+    ) -> TrackListResponse {
+        let track_count = tracks.len();
+        let mut response = TrackListResponse {
+            activated: None,
+            delete: false,
+            interacted: false,
+        };
         if track_count == 0 {
-            if self.loaders.is_empty() {
-                ui.painter().text(
-                    panel_rect.center(),
-                    Align2::CENTER_CENTER,
-                    "No tracks",
-                    FontId::proportional(14.0),
-                    TEXT_FAINT,
-                );
+            return response;
+        }
+
+        if keyboard {
+            let (delete, select_all, deselect) = ui.input(|i| {
+                (
+                    i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace),
+                    i.modifiers.command && i.key_pressed(Key::A),
+                    i.key_pressed(Key::Escape),
+                )
+            });
+            response.delete = delete && !self.selection.is_empty();
+            if select_all {
+                self.selection.select_all(track_count);
             }
-            return;
+            if deselect {
+                self.selection.clear();
+            }
         }
 
-        // Клавиши списка: удалить выделенное, выделить всё, снять выделение
-        let (delete, select_all, deselect) = ui.input(|i| {
-            (
-                i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace),
-                i.modifiers.command && i.key_pressed(Key::A),
-                i.key_pressed(Key::Escape),
-            )
-        });
-        if select_all {
-            self.selection.select_all(track_count);
-        }
-        if deselect {
-            self.selection.clear();
-        }
-
-        // Пока `track_list` заимствован, менять плеер нельзя — запоминаем, что сделать, и делаем после
-        let mut play = None;
-        let mut remove = delete;
         let modifiers = ui.input(|i| i.modifiers);
         // show_rows берёт зазор между строками из Ui, в котором вызван
         ui.spacing_mut().item_spacing.y = TRACK_ROW_GAP;
         egui::ScrollArea::vertical()
+            .id_salt(self.id)
             // Отступ задаётся самой ScrollArea: полоса прокрутки остаётся у края панели,
             // а отступ прокручивается вместе со списком. Frame внутри show_rows не годится —
             // его отступ сбил бы расчёт позиций строк
@@ -127,7 +123,6 @@ impl PlayerApp {
                 top: 0,
                 bottom: 16,
             })
-            // Рисуются только видимые строки: тысячи треков не тормозят прокрутку и анимации
             .show_rows(ui, TRACK_ROW_HEIGHT, track_count, |ui, rows| {
                 // Верх всего содержимого списка (строки 0) в координатах экрана: show_rows
                 // отдаёт только видимый кусок, начиная со строки rows.start. Номер строки
@@ -146,11 +141,12 @@ impl PlayerApp {
                 let visible = ui.clip_rect();
                 let background = ui.interact(
                     visible,
-                    egui::Id::unique("track_list_marquee"),
+                    egui::Id::unique(self.id).with("marquee"),
                     Sense::click_and_drag(),
                 );
                 if background.clicked() {
                     self.selection.clear();
+                    response.interacted = true;
                 }
                 if background.drag_started()
                     && let Some(start) = background.interact_pointer_pos()
@@ -164,38 +160,37 @@ impl PlayerApp {
                             BTreeSet::new()
                         },
                     });
+                    response.interacted = true;
                 }
 
-                let tracks = &self.controller.player().track_list.tracks;
                 for index in rows {
                     let row = track_row(
                         ui,
                         index,
                         &tracks[index],
-                        current == Some(index),
+                        &row_state(index),
                         self.selection.contains(index),
                     );
 
                     if row.clicked() {
                         self.selection.click(index, modifiers);
+                        response.interacted = true;
                     }
                     if row.double_clicked() {
-                        play = Some(index);
+                        response.activated = Some(index);
                     }
                     // Правый клик по невыделенному треку выделяет его — меню действует
                     // на выделение, как в Finder
-                    if row.secondary_clicked() && !self.selection.contains(index) {
-                        self.selection.click(index, egui::Modifiers::NONE);
-                    }
-                    row.context_menu(|ui| {
-                        widgets::menu_style(ui);
-                        let label = match self.selection.len() {
-                            0 | 1 => "Remove from playlist".to_owned(),
-                            count => format!("Remove {count} tracks from playlist"),
-                        };
-                        if widgets::menu_item(ui, &label).clicked() {
-                            remove = true;
+                    if row.secondary_clicked() {
+                        if !self.selection.contains(index) {
+                            self.selection.click(index, egui::Modifiers::NONE);
                         }
+                        response.interacted = true;
+                    }
+                    let selected = self.selection.len();
+                    row.context_menu(|ui| {
+                        super::menu_style(ui);
+                        context_menu(ui, selected);
                     });
                 }
 
@@ -237,37 +232,16 @@ impl PlayerApp {
                 }
             });
 
-        if remove {
-            self.remove_selected();
-        }
-        if let Some(index) = play {
-            let result = self
-                .controller
-                .select(index)
-                .and_then(|()| self.controller.play());
-            self.set_result(result);
-        }
-    }
-
-    /// Удаляет выделенные треки из списка
-    pub(super) fn remove_selected(&mut self) {
-        if self.selection.is_empty() {
-            return;
-        }
-        let result = self.controller.remove_tracks(self.selection.indices());
-        self.set_result(result);
-        // Номера треков после удаления сдвинулись — старое выделение уже ни на что не указывает
-        self.selection.clear();
+        response
     }
 }
 
-/// Строка списка треков фиксированной высоты: название слева (обрезается с «…»),
-/// длительность справа. Возвращает `true`, если по строке кликнули.
+/// Строка списка фиксированной высоты: название слева (обрезается с «…»), длительность справа
 fn track_row(
     ui: &mut Ui,
     index: usize,
     track: &Track,
-    is_current: bool,
+    state: &RowState,
     is_selected: bool,
 ) -> egui::Response {
     let (row_rect, _) =
@@ -276,12 +250,15 @@ fn track_row(
     // не годится — при прокрутке строки меняют место
     let row_id = ui.scope_id().with(("track_row", index));
     // Обычный курсор, а не «рука»: клик выделяет, а не запускает трек — запуск двойным кликом
-    let row = ui.interact(row_rect, row_id, Sense::click());
+    let mut row = ui.interact(row_rect, row_id, Sense::click());
+    if state.missing {
+        row = row.on_hover_text("File not found: it was moved or deleted");
+    }
 
     // Активность, выделение и наведение меняются плавно: фон и цвет текста перетекают
     let active = ui.ctx().animate_bool_with_time_and_easing(
         row_id.with("active"),
-        is_current,
+        state.current,
         TRACK_ACTIVE_FADE_SECS,
         egui::emath::easing::cubic_in_out,
     );
@@ -293,7 +270,7 @@ fn track_row(
     );
     let hover = ui.ctx().animate_bool_with_time_and_easing(
         row_id.with("hover"),
-        row.hovered() && !is_current,
+        row.hovered() && !state.current,
         HOVER_FADE_SECS,
         egui::emath::easing::cubic_out,
     );
@@ -316,7 +293,11 @@ fn track_row(
         );
     }
 
-    let text_color = TEXT_MUTED.lerp_to_gamma(TEXT, active);
+    let text_color = if state.missing {
+        TEXT_FAINT
+    } else {
+        TEXT_MUTED.lerp_to_gamma(TEXT, active)
+    };
     let content = row_rect.shrink2(vec2(TRACK_ROW_PADDING, 0.0));
     // Аналог justify-content: space-between: время прижато вправо,
     // название занимает оставшееся место слева
