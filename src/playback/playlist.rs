@@ -1,0 +1,155 @@
+//! Список треков: порядок воспроизведения, shuffle, повтор, удаление.
+
+use serde::Serialize;
+use std::collections::{BTreeSet, VecDeque};
+
+use crate::library::Track;
+
+/// Режим повтора: включён может быть только один
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Default)]
+pub enum RepeatMode {
+    #[default]
+    Off,
+    /// Текущий трек по кругу
+    One,
+    /// Весь список по кругу
+    All,
+}
+
+#[derive(Serialize, Debug, Clone, Default)]
+pub struct TrackList {
+    pub tracks: VecDeque<Track>,
+    pub current_index: Option<usize>,
+    /// Случайный порядок воспроизведения
+    pub shuffle: bool,
+    pub repeat: RepeatMode,
+    /// Порядок воспроизведения при `shuffle`: перестановка индексов `tracks`.
+    /// Без `shuffle` треки идут по порядку, и этот список не используется
+    #[serde(skip)]
+    pub(super) shuffle_order: Vec<usize>,
+}
+
+impl TrackList {
+    /// Порядок, в котором играют треки: перемешанный или обычный
+    pub(super) fn play_order(&self) -> Vec<usize> {
+        if self.shuffle {
+            self.shuffle_order.clone()
+        } else {
+            (0..self.tracks.len()).collect()
+        }
+    }
+
+    /// Трек, который идёт после текущего (`step` = 1) или перед ним (`step` = -1).
+    /// На краю списка с `wrap` переходит на другой конец, без него — `None`.
+    pub(super) fn neighbor(&self, step: isize, wrap: bool) -> Option<usize> {
+        let order = self.play_order();
+        let len = order.len() as isize;
+        if len == 0 {
+            return None;
+        }
+        let Some(position) = self
+            .current_index
+            .and_then(|current| order.iter().position(|&index| index == current))
+        else {
+            return order.first().copied();
+        };
+        let target = position as isize + step;
+        if (0..len).contains(&target) {
+            Some(order[target as usize])
+        } else if wrap {
+            Some(order[target.rem_euclid(len) as usize])
+        } else {
+            None
+        }
+    }
+
+    /// Перемешивает порядок заново. Текущий трек ставится первым, чтобы после
+    /// включения shuffle сыграли все остальные, прежде чем он повторится
+    pub(super) fn reshuffle(&mut self) {
+        let mut rest: Vec<usize> = (0..self.tracks.len())
+            .filter(|&index| Some(index) != self.current_index)
+            .collect();
+        fastrand::shuffle(&mut rest);
+        self.shuffle_order = self.current_index.into_iter().chain(rest).collect();
+    }
+
+    /// Удаляет треки с номерами `indices`. Номера остальных сдвигаются, поэтому
+    /// текущий трек и перемешанный порядок пересчитываются под новые номера.
+    /// Если удалён текущий трек, `current_index` становится `None`.
+    pub(super) fn remove(&mut self, indices: &BTreeSet<usize>) {
+        // Новый номер каждого трека; `None` — трек удаляется
+        let mut next = 0;
+        let remap: Vec<Option<usize>> = (0..self.tracks.len())
+            .map(|old| {
+                (!indices.contains(&old)).then(|| {
+                    next += 1;
+                    next - 1
+                })
+            })
+            .collect();
+        let new_index = |old: usize| remap.get(old).copied().flatten();
+
+        let mut old = 0;
+        self.tracks.retain(|_| {
+            old += 1;
+            remap[old - 1].is_some()
+        });
+        self.current_index = self.current_index.and_then(new_index);
+        self.shuffle_order = self
+            .shuffle_order
+            .iter()
+            .filter_map(|&old| new_index(old))
+            .collect();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TrackList;
+    use crate::library::Track;
+    use std::{collections::BTreeSet, path::PathBuf};
+
+    fn list(len: usize) -> TrackList {
+        TrackList {
+            tracks: (0..len)
+                .map(|i| Track {
+                    path: PathBuf::from(format!("{i}.mp3")),
+                    title: i.to_string(),
+                    artist: String::new(),
+                    duration_secs: 0,
+                    album: String::new(),
+                    album_cover: None,
+                })
+                .collect(),
+            shuffle_order: vec![3, 0, 4, 1, 2],
+            ..TrackList::default()
+        }
+    }
+
+    fn titles(list: &TrackList) -> Vec<&str> {
+        list.tracks.iter().map(|t| t.title.as_str()).collect()
+    }
+
+    #[test]
+    fn remove_shifts_current_and_shuffle_order() {
+        let mut list = list(5);
+        list.current_index = Some(3);
+        list.remove(&BTreeSet::from([0, 2]));
+
+        assert_eq!(titles(&list), ["1", "3", "4"]);
+        // Трек «3» был на месте 3, перед ним удалили два — теперь он на месте 1
+        assert_eq!(list.current_index, Some(1));
+        // Старый порядок 3, 0, 4, 1, 2 без удалённых 0 и 2 — в новых номерах
+        assert_eq!(list.shuffle_order, [1, 2, 0]);
+    }
+
+    #[test]
+    fn remove_current_track_clears_current_index() {
+        let mut list = list(5);
+        list.current_index = Some(2);
+        list.remove(&BTreeSet::from([2]));
+
+        assert_eq!(titles(&list), ["0", "1", "3", "4"]);
+        assert_eq!(list.current_index, None);
+    }
+}

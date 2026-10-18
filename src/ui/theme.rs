@@ -48,3 +48,7 @@ pub const RED: Color32 = Color32::from_rgb(0xFF, 0x6B, 0x6B); // error, debug co
 pub const BANNER_FILL: Color32 = Color32::from_rgba_unmultiplied_const(28, 28, 30, 245);
 /// Рамка плашки прогресса — нейтральная, в отличие от красной у ошибки
 pub const BANNER_BORDER: Color32 = Color32::from_rgba_premultiplied(45, 45, 45, 45);
+
+// Длительность плавных переходов: наведение и смена активного элемента
+pub const HOVER_FADE_SECS: f32 = 0.15;
+pub const TRACK_ACTIVE_FADE_SECS: f32 = 0.2;

@@ -1,7 +1,7 @@
 use serde::Serialize;
 use std::path::PathBuf;
 
-use crate::metadata::{check_supported, get_file_metadata};
+use super::{metadata::get_file_metadata, scan::check_supported};
 
 #[derive(Serialize, Debug, Clone)]
 pub struct Track {

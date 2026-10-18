@@ -1,17 +1,7 @@
-use crate::theme::{HIGHLIGHT_STRONG, ICON, ICON_DISABLED, ICON_OFF, ICON_SOFT};
+//! Иконки кнопок плеера, нарисованные фигурами: play/pause, prev/next, shuffle, repeat, «+».
+
+use super::theme::{HIGHLIGHT_STRONG, ICON, ICON_DISABLED, ICON_OFF, ICON_SOFT};
 use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
-
-/// Секунды в `мм:сс` или `чч:мм:сс`.
-pub fn format_secs(seconds: f32) -> String {
-    let seconds = seconds.max(0.0) as u64;
-    let (h, m, s) = (seconds / 3600, seconds % 3600 / 60, seconds % 60);
-
-    if h > 0 {
-        format!("{h:02}:{m:02}:{s:02}")
-    } else {
-        format!("{m:02}:{s:02}")
-    }
-}
 
 /// Контур выпуклого многоугольника, раздутого на `radius`: выпуклая оболочка
 /// кругов вокруг вершин. Совпадающие вершины допустимы.

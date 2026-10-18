@@ -17,7 +17,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use crate::{metadata::find_audio_files, track::Track};
+use super::{scan::find_audio_files, track::Track};
 
 /// Больше потоков не даёт выигрыша: упираемся в чтение с диска
 const MAX_WORKERS: usize = 8;
