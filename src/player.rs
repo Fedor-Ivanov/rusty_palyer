@@ -1,6 +1,6 @@
 use serde::Serialize;
 use std::{
-    collections::VecDeque,
+    collections::{BTreeSet, VecDeque},
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -87,6 +87,35 @@ impl TrackList {
             .collect();
         fastrand::shuffle(&mut rest);
         self.shuffle_order = self.current_index.into_iter().chain(rest).collect();
+    }
+
+    /// Удаляет треки с номерами `indices`. Номера остальных сдвигаются, поэтому
+    /// текущий трек и перемешанный порядок пересчитываются под новые номера.
+    /// Если удалён текущий трек, `current_index` становится `None`.
+    fn remove(&mut self, indices: &BTreeSet<usize>) {
+        // Новый номер каждого трека; `None` — трек удаляется
+        let mut next = 0;
+        let remap: Vec<Option<usize>> = (0..self.tracks.len())
+            .map(|old| {
+                (!indices.contains(&old)).then(|| {
+                    next += 1;
+                    next - 1
+                })
+            })
+            .collect();
+        let new_index = |old: usize| remap.get(old).copied().flatten();
+
+        let mut old = 0;
+        self.tracks.retain(|_| {
+            old += 1;
+            remap[old - 1].is_some()
+        });
+        self.current_index = self.current_index.and_then(new_index);
+        self.shuffle_order = self
+            .shuffle_order
+            .iter()
+            .filter_map(|&old| new_index(old))
+            .collect();
     }
 }
 
@@ -195,6 +224,25 @@ impl PlayerController {
         list.shuffle_order.extend(added);
     }
 
+    /// Удаляет треки из списка. Если среди них текущий, воспроизведение останавливается
+    /// и текущего трека больше нет — плеер как до выбора трека
+    pub fn remove_tracks(&mut self, indices: &BTreeSet<usize>) -> Result<(), String> {
+        let removes_current = self
+            .player
+            .track_list
+            .current_index
+            .is_some_and(|current| indices.contains(&current));
+        self.player.track_list.remove(indices);
+
+        if removes_current {
+            self.player.current_track = None;
+            self.player.state = PlayerState::Stopped;
+            self.position_ms.store(0, Ordering::Relaxed);
+            self.audio.send(AudioCmd::Stop).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    }
+
     /// Включает или выключает случайный порядок
     pub fn toggle_shuffle(&mut self) {
         let list = &mut self.player.track_list;
@@ -232,6 +280,11 @@ impl PlayerController {
     /// иначе — следующий по порядку (с учётом shuffle). Если список закончился и повтор
     /// всего списка выключен, делает текущим первый трек, но не запускает его.
     pub fn play_next(&mut self) -> Result<(), String> {
+        // Текущий трек удалили из списка: «доиграл» мог прийти уже после остановки —
+        // само ничего не запускаем
+        if self.player.current_track.is_none() {
+            return Ok(());
+        }
         let list = &self.player.track_list;
         if list.repeat == RepeatMode::One
             && let Some(current) = list.current_index
@@ -342,5 +395,56 @@ impl PlayerController {
         self.player.state = PlayerState::Paused;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TrackList;
+    use crate::track::Track;
+    use std::{collections::BTreeSet, path::PathBuf};
+
+    fn list(len: usize) -> TrackList {
+        TrackList {
+            tracks: (0..len)
+                .map(|i| Track {
+                    path: PathBuf::from(format!("{i}.mp3")),
+                    title: i.to_string(),
+                    artist: String::new(),
+                    duration_secs: 0,
+                    album: String::new(),
+                    album_cover: None,
+                })
+                .collect(),
+            shuffle_order: vec![3, 0, 4, 1, 2],
+            ..TrackList::default()
+        }
+    }
+
+    fn titles(list: &TrackList) -> Vec<&str> {
+        list.tracks.iter().map(|t| t.title.as_str()).collect()
+    }
+
+    #[test]
+    fn remove_shifts_current_and_shuffle_order() {
+        let mut list = list(5);
+        list.current_index = Some(3);
+        list.remove(&BTreeSet::from([0, 2]));
+
+        assert_eq!(titles(&list), ["1", "3", "4"]);
+        // Трек «3» был на месте 3, перед ним удалили два — теперь он на месте 1
+        assert_eq!(list.current_index, Some(1));
+        // Старый порядок 3, 0, 4, 1, 2 без удалённых 0 и 2 — в новых номерах
+        assert_eq!(list.shuffle_order, [1, 2, 0]);
+    }
+
+    #[test]
+    fn remove_current_track_clears_current_index() {
+        let mut list = list(5);
+        list.current_index = Some(2);
+        list.remove(&BTreeSet::from([2]));
+
+        assert_eq!(titles(&list), ["0", "1", "3", "4"]);
+        assert_eq!(list.current_index, None);
     }
 }

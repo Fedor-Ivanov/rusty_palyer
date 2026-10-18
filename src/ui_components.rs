@@ -13,6 +13,7 @@ const COVER_MAX_SIZE: f32 = 250.0;
 pub const HOVER_FADE_SECS: f32 = 0.15;
 pub const TRACK_ACTIVE_FADE_SECS: f32 = 0.2;
 const BLOCK_TITLE_SIZE: f32 = 16.0;
+const MENU_TEXT_SIZE: f32 = 15.0;
 const RESIZE_LINE_WIDTH: f32 = 1.0;
 const ERROR_BANNER_MAX_WIDTH: f32 = 440.0;
 const ERROR_BANNER_BUTTON_WIDTH: f32 = 48.0;
@@ -292,4 +293,16 @@ pub fn loading_banner(ctx: &egui::Context, progress: Option<(usize, usize)>) -> 
         })
         .response;
     (cancel, response.rect.bottom())
+}
+
+/// Оформление пунктов меню: крупнее стандартных — больше шрифт и поля вокруг текста.
+/// Вызывать в начале содержимого меню, до `menu_item`
+pub fn menu_style(ui: &mut Ui) {
+    ui.spacing_mut().button_padding = vec2(12.0, 7.0);
+    ui.spacing_mut().item_spacing.y = 2.0;
+}
+
+/// Пункт меню
+pub fn menu_item(ui: &mut Ui, text: &str) -> Response {
+    ui.add(egui::Button::new(RichText::new(text).size(MENU_TEXT_SIZE)))
 }

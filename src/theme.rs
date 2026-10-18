@@ -34,6 +34,11 @@ pub const HIGHLIGHT: Color32 = Color32::from_rgba_premultiplied(18, 18, 18, 18);
 /// Подсветка активного элемента, подложка круглых кнопок
 pub const HIGHLIGHT_STRONG: Color32 = Color32::from_rgba_premultiplied(40, 40, 40, 40);
 
+/// Рамка выделения областью мыши — в тон выделенным строкам: обводка того же цвета,
+/// что рамка выделения и подсветка играющего трека, заливка — как подсветка при наведении
+pub const MARQUEE_FILL: Color32 = HIGHLIGHT;
+pub const MARQUEE_STROKE: Color32 = HIGHLIGHT_STRONG;
+
 /// Незаполненная часть ползунка
 pub const SLIDER_TRACK: Color32 = Color32::from_rgba_premultiplied(55, 55, 55, 55);
 

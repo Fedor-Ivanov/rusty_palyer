@@ -1,14 +1,15 @@
 use eframe::egui::{
-    self, Align, Align2, CornerRadius, CursorIcon, FontId, Label, Layout, Pos2, Rect, RichText,
-    Sense, Ui, pos2, vec2,
+    self, Align, Align2, CornerRadius, CursorIcon, FontId, Key, Label, Layout, Pos2, Rect,
+    RichText, Sense, Ui, pos2, vec2,
 };
 use std::{
-    collections::VecDeque,
+    collections::{BTreeSet, VecDeque},
     time::{Duration, Instant},
 };
 
 use crate::theme::{
-    HIGHLIGHT, HIGHLIGHT_STRONG, SLIDER_TRACK, TEXT, TEXT_FAINT, TEXT_MUTED, WINDOW_TINT,
+    HIGHLIGHT, HIGHLIGHT_STRONG, MARQUEE_FILL, MARQUEE_STROKE, SLIDER_TRACK, TEXT, TEXT_FAINT,
+    TEXT_MUTED, WINDOW_TINT,
 };
 use crate::{
     loader::{Finished, Loader, Source},
@@ -32,6 +33,11 @@ const ICON_BUTTON_GAP: f32 = 4.0;
 const TRACK_ROW_HEIGHT: f32 = 30.0;
 const TRACK_ROW_PADDING: f32 = 8.0;
 const TRACK_ROW_GAP: f32 = 6.0;
+// Толщина рамки выделенной строки
+const SELECTION_STROKE_WIDTH: f32 = 1.5;
+// Скорость автопрокрутки при выделении областью: точек в секунду на каждую точку,
+// на которую курсор ушёл за край списка
+const MARQUEE_AUTOSCROLL_SPEED: f32 = 8.0;
 // Фоновое добавление: как часто проверять готовность, через сколько показывать прогресс
 // (быстрое добавление обходится без него) и сколько минимум его держать, чтобы не мелькал
 const LOADER_POLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -60,6 +66,10 @@ pub struct PlayerApp {
     loaders: VecDeque<Loader>,
     /// С какого момента виден прогресс текущего добавления; `None` — не виден
     loader_shown_at: Option<Instant>,
+    /// Выделенные треки в списке
+    selection: Selection,
+    /// Выделение областью мыши, пока его тянут
+    marquee: Option<Marquee>,
 }
 
 impl PlayerApp {
@@ -70,6 +80,8 @@ impl PlayerApp {
             drag_secs: None,
             loaders: VecDeque::new(),
             loader_shown_at: None,
+            selection: Selection::default(),
+            marquee: None,
         }
     }
 
@@ -408,10 +420,11 @@ impl PlayerApp {
                 .align(egui::RectAlign::BOTTOM_END)
                 .gap(4.0)
                 .show(|ui| {
-                    if ui.button("Add files").clicked() {
+                    ui_components::menu_style(ui);
+                    if ui_components::menu_item(ui, "Add files").clicked() {
                         self.add_files();
                     }
-                    if ui.button("Add folder").clicked() {
+                    if ui_components::menu_item(ui, "Add folder").clicked() {
                         self.add_folder();
                     }
                 });
@@ -479,8 +492,25 @@ impl PlayerApp {
             return;
         }
 
-        // Пока `track_list` заимствован, менять плеер нельзя — запоминаем клик и обрабатываем после
-        let mut clicked = None;
+        // Клавиши списка: удалить выделенное, выделить всё, снять выделение
+        let (delete, select_all, deselect) = ui.input(|i| {
+            (
+                i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace),
+                i.modifiers.command && i.key_pressed(Key::A),
+                i.key_pressed(Key::Escape),
+            )
+        });
+        if select_all {
+            self.selection.select_all(track_count);
+        }
+        if deselect {
+            self.selection.clear();
+        }
+
+        // Пока `track_list` заимствован, менять плеер нельзя — запоминаем, что сделать, и делаем после
+        let mut play = None;
+        let mut remove = delete;
+        let modifiers = ui.input(|i| i.modifiers);
         // show_rows берёт зазор между строками из Ui, в котором вызван
         ui.spacing_mut().item_spacing.y = TRACK_ROW_GAP;
         egui::ScrollArea::vertical()
@@ -495,21 +525,135 @@ impl PlayerApp {
             })
             // Рисуются только видимые строки: тысячи треков не тормозят прокрутку и анимации
             .show_rows(ui, TRACK_ROW_HEIGHT, track_count, |ui, rows| {
+                // Верх всего содержимого списка (строки 0) в координатах экрана: show_rows
+                // отдаёт только видимый кусок, начиная со строки rows.start. Номер строки
+                // под курсором считается по высоте строк, а не по нарисованным виджетам —
+                // строк за пределами экрана нет, а выделять их областью нужно
+                let row_stride = TRACK_ROW_HEIGHT + TRACK_ROW_GAP;
+                let content_top = ui.max_rect().top() - rows.start as f32 * row_stride;
+                let row_at = |y: f32| {
+                    (((y - content_top) / row_stride).floor().max(0.0) as usize)
+                        .min(track_count - 1)
+                };
+
+                // Фон под строками — для выделения областью и клика по пустому месту.
+                // Добавляется до строк: строки оказываются сверху и получают клики,
+                // а перетаскивание достаётся фону (строки его не ловят)
+                let visible = ui.clip_rect();
+                let background = ui.interact(
+                    visible,
+                    egui::Id::unique("track_list_marquee"),
+                    Sense::click_and_drag(),
+                );
+                if background.clicked() {
+                    self.selection.clear();
+                }
+                if background.drag_started()
+                    && let Some(start) = background.interact_pointer_pos()
+                {
+                    self.marquee = Some(Marquee {
+                        start: pos2(start.x, start.y - content_top),
+                        // С ⌘/Ctrl область добавляется к уже выделенному
+                        base: if modifiers.command {
+                            self.selection.indices().clone()
+                        } else {
+                            BTreeSet::new()
+                        },
+                    });
+                }
+
                 let tracks = &self.controller.player().track_list.tracks;
                 for index in rows {
-                    if track_row(ui, index, &tracks[index], current == Some(index)) {
-                        clicked = Some(index);
+                    let row = track_row(
+                        ui,
+                        index,
+                        &tracks[index],
+                        current == Some(index),
+                        self.selection.contains(index),
+                    );
+
+                    if row.clicked() {
+                        self.selection.click(index, modifiers);
                     }
+                    if row.double_clicked() {
+                        play = Some(index);
+                    }
+                    // Правый клик по невыделенному треку выделяет его — меню действует
+                    // на выделение, как в Finder
+                    if row.secondary_clicked() && !self.selection.contains(index) {
+                        self.selection.click(index, egui::Modifiers::NONE);
+                    }
+                    row.context_menu(|ui| {
+                        ui_components::menu_style(ui);
+                        let label = match self.selection.len() {
+                            0 | 1 => "Remove from playlist".to_owned(),
+                            count => format!("Remove {count} tracks from playlist"),
+                        };
+                        if ui_components::menu_item(ui, &label).clicked() {
+                            remove = true;
+                        }
+                    });
+                }
+
+                // Рамка — после строк, чтобы лежала поверх них
+                if let Some(marquee) = &self.marquee
+                    && background.dragged()
+                    && let Some(pointer) = background.interact_pointer_pos()
+                {
+                    let start = pos2(marquee.start.x, content_top + marquee.start.y);
+                    let (from, to) = (row_at(start.y), row_at(pointer.y));
+                    self.selection
+                        .select_range(&marquee.base, from.min(to)..=from.max(to), from);
+
+                    ui.painter().rect(
+                        Rect::from_two_pos(start, pointer),
+                        4,
+                        MARQUEE_FILL,
+                        egui::Stroke::new(SELECTION_STROKE_WIDTH, MARQUEE_STROKE),
+                        egui::StrokeKind::Inside,
+                    );
+
+                    // Курсор ушёл за верх или низ списка — прокручиваем туда, тем быстрее,
+                    // чем дальше курсор. Положительная дельта сдвигает содержимое вниз
+                    let overshoot = if pointer.y < visible.top() {
+                        visible.top() - pointer.y
+                    } else if pointer.y > visible.bottom() {
+                        visible.bottom() - pointer.y
+                    } else {
+                        0.0
+                    };
+                    if overshoot != 0.0 {
+                        let dt = ui.input(|i| i.stable_dt);
+                        ui.scroll_with_delta(vec2(0.0, overshoot * MARQUEE_AUTOSCROLL_SPEED * dt));
+                        ui.ctx().request_repaint();
+                    }
+                }
+                if background.drag_stopped() {
+                    self.marquee = None;
                 }
             });
 
-        if let Some(index) = clicked {
+        if remove {
+            self.remove_selected();
+        }
+        if let Some(index) = play {
             let result = self
                 .controller
                 .select(index)
                 .and_then(|()| self.controller.play());
             self.set_result(result);
         }
+    }
+
+    /// Удаляет выделенные треки из списка
+    fn remove_selected(&mut self) {
+        if self.selection.is_empty() {
+            return;
+        }
+        let result = self.controller.remove_tracks(self.selection.indices());
+        self.set_result(result);
+        // Номера треков после удаления сдвинулись — старое выделение уже ни на что не указывает
+        self.selection.clear();
     }
 }
 
@@ -659,22 +803,33 @@ impl eframe::App for PlayerApp {
 
 /// Строка списка треков фиксированной высоты: название слева (обрезается с «…»),
 /// длительность справа. Возвращает `true`, если по строке кликнули.
-fn track_row(ui: &mut Ui, index: usize, track: &Track, is_current: bool) -> bool {
+fn track_row(
+    ui: &mut Ui,
+    index: usize,
+    track: &Track,
+    is_current: bool,
+    is_selected: bool,
+) -> egui::Response {
     let (row_rect, _) =
         ui.allocate_exact_size(vec2(ui.available_width(), TRACK_ROW_HEIGHT), Sense::hover());
     // Стабильный id строки: по нему egui хранит состояние анимаций. Id от позиции
     // не годится — при прокрутке строки меняют место
     let row_id = ui.scope_id().with(("track_row", index));
-    let row = ui
-        .interact(row_rect, row_id, Sense::click())
-        .on_hover_cursor(CursorIcon::PointingHand);
+    // Обычный курсор, а не «рука»: клик выделяет, а не запускает трек — запуск двойным кликом
+    let row = ui.interact(row_rect, row_id, Sense::click());
 
-    // Активность и наведение меняются плавно: фон и цвет текста перетекают
+    // Активность, выделение и наведение меняются плавно: фон и цвет текста перетекают
     let active = ui.ctx().animate_bool_with_time_and_easing(
         row_id.with("active"),
         is_current,
         ui_components::TRACK_ACTIVE_FADE_SECS,
         egui::emath::easing::cubic_in_out,
+    );
+    let selected = ui.ctx().animate_bool_with_time_and_easing(
+        row_id.with("selected"),
+        is_selected,
+        ui_components::HOVER_FADE_SECS,
+        egui::emath::easing::cubic_out,
     );
     let hover = ui.ctx().animate_bool_with_time_and_easing(
         row_id.with("hover"),
@@ -687,6 +842,19 @@ fn track_row(ui: &mut Ui, index: usize, track: &Track, is_current: bool) -> bool
         .gamma_multiply(hover)
         .lerp_to_gamma(HIGHLIGHT_STRONG, active);
     ui.painter().rect_filled(row_rect, 8, fill);
+    // Выделение — только рамка того же цвета, что подсветка играющего трека: фон остаётся
+    // свободным, и выделенный играющий трек по-прежнему видно как играющий
+    if selected > 0.0 {
+        ui.painter().rect_stroke(
+            row_rect,
+            8,
+            egui::Stroke::new(
+                SELECTION_STROKE_WIDTH,
+                HIGHLIGHT_STRONG.gamma_multiply(selected),
+            ),
+            egui::StrokeKind::Inside,
+        );
+    }
 
     let text_color = TEXT_MUTED.lerp_to_gamma(TEXT, active);
     let content = row_rect.shrink2(vec2(TRACK_ROW_PADDING, 0.0));
@@ -711,7 +879,83 @@ fn track_row(ui: &mut Ui, index: usize, track: &Track, is_current: bool) -> bool
         ui.add(Label::new(title).selectable(false).truncate());
     });
 
-    row.clicked()
+    row
+}
+
+/// Выделение областью мыши. Начало хранится в координатах содержимого списка, а не экрана:
+/// пока тянут, список может прокручиваться, и экранная точка начала уезжает вместе с ним
+struct Marquee {
+    start: Pos2,
+    /// Что было выделено до начала (с ⌘/Ctrl область добавляется к нему)
+    base: BTreeSet<usize>,
+}
+
+/// Выделение в списке треков — как в Finder: клик выделяет один трек, ⌘/Ctrl+клик
+/// добавляет или убирает трек, Shift+клик выделяет диапазон от последнего клика
+#[derive(Default)]
+struct Selection {
+    indices: BTreeSet<usize>,
+    /// Откуда считается диапазон при Shift+клике
+    anchor: Option<usize>,
+}
+
+impl Selection {
+    fn click(&mut self, index: usize, modifiers: egui::Modifiers) {
+        if modifiers.shift
+            && let Some(anchor) = self.anchor
+        {
+            // ⌘/Ctrl вместе с Shift добавляет диапазон к уже выделенному
+            if !modifiers.command {
+                self.indices.clear();
+            }
+            self.indices.extend(anchor.min(index)..=anchor.max(index));
+        } else if modifiers.command {
+            if !self.indices.remove(&index) {
+                self.indices.insert(index);
+            }
+            self.anchor = Some(index);
+        } else {
+            self.indices = BTreeSet::from([index]);
+            self.anchor = Some(index);
+        }
+    }
+
+    /// Выделение областью: `base` плюс строки `range`. `anchor` — строка, с которой начали
+    /// тянуть: от неё считается диапазон при следующем Shift+клике
+    fn select_range(
+        &mut self,
+        base: &BTreeSet<usize>,
+        range: std::ops::RangeInclusive<usize>,
+        anchor: usize,
+    ) {
+        self.indices = base.iter().copied().chain(range).collect();
+        self.anchor = Some(anchor);
+    }
+
+    fn select_all(&mut self, len: usize) {
+        self.indices = (0..len).collect();
+    }
+
+    fn clear(&mut self) {
+        self.indices.clear();
+        self.anchor = None;
+    }
+
+    fn contains(&self, index: usize) -> bool {
+        self.indices.contains(&index)
+    }
+
+    fn len(&self) -> usize {
+        self.indices.len()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.indices.is_empty()
+    }
+
+    fn indices(&self) -> &BTreeSet<usize> {
+        &self.indices
+    }
 }
 
 /// Текст ошибки добавления: первые несколько файлов и сколько ещё не добавилось —
@@ -726,4 +970,66 @@ fn summarize_errors(errors: &[String]) -> String {
         );
     }
     text
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Selection;
+    use eframe::egui::Modifiers;
+
+    fn selected(selection: &Selection) -> Vec<usize> {
+        selection.indices().iter().copied().collect()
+    }
+
+    #[test]
+    fn click_selects_only_one_track() {
+        let mut selection = Selection::default();
+        selection.click(2, Modifiers::NONE);
+        selection.click(5, Modifiers::NONE);
+        assert_eq!(selected(&selection), [5]);
+    }
+
+    #[test]
+    fn command_click_toggles_tracks() {
+        let mut selection = Selection::default();
+        selection.click(2, Modifiers::NONE);
+        selection.click(5, Modifiers::COMMAND);
+        selection.click(7, Modifiers::COMMAND);
+        selection.click(2, Modifiers::COMMAND);
+        assert_eq!(selected(&selection), [5, 7]);
+    }
+
+    #[test]
+    fn shift_click_selects_range_from_anchor() {
+        let mut selection = Selection::default();
+        selection.click(5, Modifiers::NONE);
+        selection.click(2, Modifiers::SHIFT);
+        assert_eq!(selected(&selection), [2, 3, 4, 5]);
+        // Якорь остаётся на 5: новый Shift+клик заменяет диапазон, а не расширяет его
+        selection.click(7, Modifiers::SHIFT);
+        assert_eq!(selected(&selection), [5, 6, 7]);
+    }
+
+    #[test]
+    fn command_shift_click_adds_range() {
+        let mut selection = Selection::default();
+        selection.click(0, Modifiers::NONE);
+        selection.click(5, Modifiers::COMMAND);
+        selection.click(7, Modifiers::COMMAND | Modifiers::SHIFT);
+        assert_eq!(selected(&selection), [0, 5, 6, 7]);
+    }
+
+    #[test]
+    fn marquee_range_replaces_or_adds_to_base() {
+        let mut selection = Selection::default();
+        selection.select_range(&Default::default(), 3..=6, 6);
+        assert_eq!(selected(&selection), [3, 4, 5, 6]);
+
+        let base = [0, 9].into_iter().collect();
+        selection.select_range(&base, 4..=5, 4);
+        assert_eq!(selected(&selection), [0, 4, 5, 9]);
+        // Shift+клик после области считает диапазон от строки, с которой её начали тянуть
+        selection.click(7, Modifiers::SHIFT);
+        assert_eq!(selected(&selection), [4, 5, 6, 7]);
+    }
 }
