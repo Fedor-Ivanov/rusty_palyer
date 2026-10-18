@@ -1,8 +1,6 @@
 //! Виды библиотеки в центральной области: исполнители, альбомы, композиции.
 
-use eframe::egui::{
-    self, Align, Align2, FontId, Label, Rect, RichText, Sense, Stroke, StrokeKind, Ui, vec2,
-};
+use eframe::egui::{self, Align, Align2, FontId, Label, Rect, RichText, Sense, Ui, vec2};
 
 use std::{collections::HashSet, path::PathBuf};
 
@@ -16,10 +14,7 @@ use crate::{
         covers::CoverSize,
         format::plural,
         icons::paint_overlay_play,
-        theme::{
-            HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, SELECTION_STROKE_WIDTH, TEXT, TEXT_FAINT,
-            TEXT_MUTED,
-        },
+        theme::{HIGHLIGHT, HIGHLIGHT_STRONG, TEXT, TEXT_FAINT, TEXT_MUTED},
         widgets::{self, ButtonStyle, TileLine},
     },
 };
@@ -40,6 +35,13 @@ pub(super) struct AlbumKey {
 }
 
 impl AlbumKey {
+    pub(super) fn of(album: &AlbumGroup) -> Self {
+        Self {
+            title: album.title.clone(),
+            artist: album.artist.clone(),
+        }
+    }
+
     /// Сравнение без учёта регистра — как при группировке
     fn matches(&self, album: &AlbumGroup) -> bool {
         album.title.to_lowercase() == self.title.to_lowercase()
@@ -49,8 +51,6 @@ impl AlbumKey {
 /// Кнопка play поверх обложки альбома: размер и отступ от угла обложки
 const OVERLAY_PLAY_SIZE: f32 = 32.0;
 const OVERLAY_PLAY_INSET: f32 = 8.0;
-/// Отступ рамки вокруг плитки с открытым меню — чтобы рамка не ложилась на край обложки
-const TILE_HIGHLIGHT_PADDING: f32 = 6.0;
 
 /// Что сделать с альбомом или исполнителем — из контекстного меню или кнопкой на обложке
 #[derive(Clone, Copy)]
@@ -72,12 +72,13 @@ pub(super) enum GroupKind {
     Songs,
 }
 
-/// Пункты контекстного меню альбома и исполнителя
-const GROUP_MENU: [(&str, GroupAction); 3] = [
-    ("Play", GroupAction::Play),
-    ("Add to playlist", GroupAction::AddToPlaylist),
-    ("Remove from library", GroupAction::Remove),
-];
+/// К каким плиткам относится действие
+enum Target {
+    /// Одна плитка: кнопка play на обложке
+    One(usize),
+    /// Выделенные: контекстное меню, клавиша Delete
+    Selection,
+}
 
 impl PlayerApp {
     /// Вид библиотеки `view` во всю центральную область
@@ -133,7 +134,7 @@ impl PlayerApp {
     }
 
     /// Пересчитывает исполнителей и альбомы, если библиотека изменилась
-    fn refresh_groups(&mut self) {
+    pub(super) fn refresh_groups(&mut self) {
         let revision = self.library.revision();
         if self.groups.revision != Some(revision) {
             let (artists, albums) = groups::group(self.library.tracks());
@@ -161,20 +162,20 @@ impl PlayerApp {
         }
         // Имя — по центру под круглой картинкой. Сетка заимствует исполнителей —
         // действие из меню запоминаем и выполняем после неё
+        self.artists_grid
+            .set_scope(&self.library.revision().to_string());
         let mut action = None;
-        let clicked = widgets::tile_grid(
+        let response = self.artists_grid.show(
             ui,
-            "artists",
             artists.len(),
             1,
             Align::Center,
-            true,
+            self.focus == ListFocus::Grid,
             |ui, index, image_rect, tile| {
                 let artist = &artists[index];
                 paint_artist_placeholder(ui, image_rect, &artist.name, tile.hover);
-                paint_menu_highlight(ui, tile);
-                if let Some(menu_action) = group_context_menu(tile) {
-                    action = Some((menu_action, index));
+                if let Some(menu_action) = group_context_menu(tile, GroupKind::Artist) {
+                    action = Some(menu_action);
                 }
                 vec![TileLine {
                     text: artist.name.clone(),
@@ -182,13 +183,28 @@ impl PlayerApp {
                 }]
             },
         );
-        if let Some(index) = clicked {
-            self.selected_artist = Some(self.groups.artists[index].name.clone());
+        if response.interacted {
+            self.focus = ListFocus::Grid;
         }
-        if let Some((action, index)) = action {
-            let name = self.groups.artists[index].name.clone();
-            let tracks = self.artist_track_indices(&name);
-            self.apply_group_action(action, GroupKind::Artist, name, &tracks);
+        if response.delete {
+            action = Some(GroupAction::Remove);
+        }
+
+        if let Some(index) = response.opened {
+            self.selected_artist = Some(self.groups.artists[index].name.clone());
+        } else if let Some(action) = action {
+            // Исполнители — в порядке сетки, их треки — альбом за альбомом
+            let names: Vec<String> = self
+                .artists_grid
+                .selection()
+                .iter()
+                .map(|&index| self.groups.artists[index].name.clone())
+                .collect();
+            let tracks: Vec<usize> = names
+                .iter()
+                .flat_map(|name| self.artist_track_indices(name))
+                .collect();
+            self.apply_group_action(action, GroupKind::Artist, names, &tracks);
         }
     }
 
@@ -460,6 +476,7 @@ impl PlayerApp {
             })
             .collect();
         let covers = &mut self.covers;
+        let artist_name_scope = artist.clone();
         if albums.is_empty() {
             let text = if artist.is_some() {
                 "No albums"
@@ -469,22 +486,36 @@ impl PlayerApp {
             placeholder(ui, text);
             return;
         }
+        // У каждой сетки своё выделение. Оно относится к содержимому: у профиля исполнителя —
+        // к его альбомам; после изменения библиотеки номера плиток значат другое
+        let scope = format!(
+            "{}/{}",
+            artist_name_scope.as_deref().unwrap_or_default(),
+            self.library.revision()
+        );
+        let grid = if id_salt == "artist_albums" {
+            &mut self.artist_albums_grid
+        } else {
+            &mut self.albums_grid
+        };
+        grid.set_scope(&scope);
+
         // Сетка заимствует альбомы и кэш обложек — действие запоминаем и выполняем после неё.
         // Клик по плитке открывает альбом; воспроизведение — кнопкой на обложке и из меню
         let mut action = None;
-        let clicked = widgets::tile_grid(
+        let response = grid.show(
             ui,
-            id_salt,
             albums.len(),
             3,
             Align::Min,
-            true,
+            self.focus == ListFocus::Grid,
             |ui, index, image_rect, tile| {
                 let album = albums[index];
                 let cover = covers.get(&album.cover_from, CoverSize::Thumbnail);
                 widgets::paint_cover(ui, image_rect, cover, TILE_RADIUS);
 
                 // Кнопка play в левом верхнем углу обложки — проявляется при наведении на плитку
+                // и играет только этот альбом, независимо от выделения
                 if tile.hover > 0.0 {
                     let play_rect = Rect::from_min_size(
                         image_rect.min + vec2(OVERLAY_PLAY_INSET, OVERLAY_PLAY_INSET),
@@ -499,13 +530,12 @@ impl PlayerApp {
                     );
                     paint_overlay_play(ui, play_rect, tile.hover, play.hover);
                     if play.clicked {
-                        action = Some((GroupAction::Play, index));
+                        action = Some((GroupAction::Play, Target::One(index)));
                     }
                 }
 
-                paint_menu_highlight(ui, tile);
-                if let Some(menu_action) = group_context_menu(tile) {
-                    action = Some((menu_action, index));
+                if let Some(menu_action) = group_context_menu(tile, GroupKind::Album) {
+                    action = Some((menu_action, Target::Selection));
                 }
 
                 vec![
@@ -524,8 +554,14 @@ impl PlayerApp {
                 ]
             },
         );
+        if response.interacted {
+            self.focus = ListFocus::Grid;
+        }
+        if response.delete {
+            action = Some((GroupAction::Remove, Target::Selection));
+        }
 
-        if let Some(index) = clicked {
+        if let Some(index) = response.opened {
             let album = AlbumKey {
                 title: albums[index].title.clone(),
                 artist: albums[index].artist.clone(),
@@ -533,18 +569,35 @@ impl PlayerApp {
             self.selected_album = Some(album);
             // Выделение относилось к трекам прошлого альбома
             self.album_tracks_view.clear_selection();
-        } else if let Some((action, index)) = action {
-            let (title, tracks) = (albums[index].title.clone(), albums[index].tracks.clone());
-            self.apply_group_action(action, GroupKind::Album, title, &tracks);
+        } else if let Some((action, target)) = action {
+            // Альбомы — в порядке сетки, их треки — альбом за альбомом
+            let targets: Vec<usize> = match target {
+                Target::One(index) => vec![index],
+                Target::Selection => {
+                    let grid = if id_salt == "artist_albums" {
+                        &self.artist_albums_grid
+                    } else {
+                        &self.albums_grid
+                    };
+                    grid.selection().iter().copied().collect()
+                }
+            };
+            let titles = targets.iter().map(|&i| albums[i].title.clone()).collect();
+            let tracks: Vec<usize> = targets
+                .iter()
+                .flat_map(|&i| albums[i].tracks.iter().copied())
+                .collect();
+            self.apply_group_action(action, GroupKind::Album, titles, &tracks);
         }
     }
 
-    /// Действие с альбомом или исполнителем `name`: `tracks` — номера его треков в библиотеке
+    /// Действие с альбомами или исполнителями `names`: `tracks` — номера их треков
+    /// в библиотеке, по порядку
     fn apply_group_action(
         &mut self,
         action: GroupAction,
         kind: GroupKind,
-        name: String,
+        names: Vec<String>,
         tracks: &[usize],
     ) {
         match action {
@@ -566,7 +619,7 @@ impl PlayerApp {
                     .filter_map(|&index| self.library.tracks().get(index))
                     .map(|track| track.path.clone())
                     .collect();
-                self.pending_removal = Some(LibraryRemoval { kind, name, paths });
+                self.pending_removal = Some(LibraryRemoval { kind, names, paths });
             }
         }
     }
@@ -702,11 +755,11 @@ fn paint_artist_placeholder(ui: &Ui, rect: Rect, name: &str, hover: f32) {
     );
 }
 
-/// Альбом или исполнитель, удаление которых из библиотеки ждёт подтверждения
+/// Альбомы, исполнители или треки, удаление которых из библиотеки ждёт подтверждения
 pub(super) struct LibraryRemoval {
     kind: GroupKind,
-    /// Название альбома или имя исполнителя
-    name: String,
+    /// Названия альбомов, имена исполнителей или название трека — для текста диалога
+    names: Vec<String>,
     /// Файлы их треков
     paths: HashSet<PathBuf>,
 }
@@ -719,15 +772,12 @@ impl PlayerApp {
             .iter()
             .filter_map(|&index| self.library.tracks().get(index))
             .collect();
-        let name = match tracks.as_slice() {
-            [track] => track.title.clone(),
-            _ => String::new(),
-        };
+        let names = tracks.iter().map(|track| track.title.clone()).collect();
         let paths: HashSet<PathBuf> = tracks.iter().map(|track| track.path.clone()).collect();
         if !paths.is_empty() {
             self.pending_removal = Some(LibraryRemoval {
                 kind: GroupKind::Songs,
-                name,
+                names,
                 paths,
             });
         }
@@ -738,37 +788,47 @@ impl PlayerApp {
         let Some(removal) = &self.pending_removal else {
             return;
         };
-        let (title, message) = match removal.kind {
-            GroupKind::Album => (
+        const FILES_STAY: &str = "The files will stay on your disk.";
+        let tracks = plural(removal.paths.len(), "track", "tracks");
+        let (title, message) = match (removal.kind, removal.names.as_slice()) {
+            (GroupKind::Album, [album]) => (
                 "Remove album from library?".to_owned(),
+                format!("\u{201C}{album}\u{201D} will be removed from your library. {FILES_STAY}"),
+            ),
+            (GroupKind::Album, albums) => (
+                format!("Remove {} albums from library?", albums.len()),
                 format!(
-                    "\u{201C}{}\u{201D} will be removed from your library. \
-                     The files will stay on your disk.",
-                    removal.name
+                    "{} albums ({tracks}) will be removed from your library. {FILES_STAY}",
+                    albums.len()
                 ),
             ),
-            GroupKind::Artist => (
+            (GroupKind::Artist, [artist]) => (
                 "Remove artist from library?".to_owned(),
                 format!(
-                    "All songs by \u{201C}{}\u{201D} will be removed from your library. \
-                     The files will stay on your disk.",
-                    removal.name
+                    "All tracks by \u{201C}{artist}\u{201D} will be removed from your \
+                     library. {FILES_STAY}"
                 ),
             ),
-            GroupKind::Songs if removal.paths.len() == 1 => (
+            (GroupKind::Artist, artists) => (
+                format!("Remove {} artists from library?", artists.len()),
+                format!(
+                    "All tracks by {} artists ({tracks}) will be removed from your \
+                     library. {FILES_STAY}",
+                    artists.len()
+                ),
+            ),
+            (GroupKind::Songs, [song]) => (
                 "Remove song from library?".to_owned(),
                 format!(
-                    "\u{201C}{}\u{201D} will be removed from your library. \
-                     The file will stay on your disk.",
-                    removal.name
+                    "\u{201C}{song}\u{201D} will be removed from your library. \
+                     The file will stay on your disk."
                 ),
             ),
-            GroupKind::Songs => (
-                format!("Remove {} songs from library?", removal.paths.len()),
+            (GroupKind::Songs, songs) => (
+                format!("Remove {} songs from library?", songs.len()),
                 format!(
-                    "{} songs will be removed from your library. \
-                     The files will stay on your disk.",
-                    removal.paths.len()
+                    "{} songs will be removed from your library. {FILES_STAY}",
+                    songs.len()
                 ),
             ),
         };
@@ -799,35 +859,39 @@ impl PlayerApp {
     }
 }
 
-/// Пока у плитки открыто контекстное меню, она обведена рамкой, как выделенный трек
-/// в списке, — видно, к чему относится меню
-fn paint_menu_highlight(ui: &Ui, tile: &widgets::Tile) {
-    let menu_open = ui.ctx().animate_bool_with_time_and_easing(
-        tile.response.id.with("menu_open"),
-        tile.response.context_menu_opened(),
-        HOVER_FADE_SECS,
-        egui::emath::easing::cubic_out,
-    );
-    if menu_open > 0.0 {
-        ui.painter().rect_stroke(
-            tile.response.rect.expand(TILE_HIGHLIGHT_PADDING),
-            TILE_RADIUS + TILE_HIGHLIGHT_PADDING as u8,
-            Stroke::new(
-                SELECTION_STROKE_WIDTH,
-                HIGHLIGHT_STRONG.gamma_multiply(menu_open),
-            ),
-            StrokeKind::Inside,
-        );
-    }
-}
-
-/// Контекстное меню альбома или исполнителя. Возвращает выбранное действие
-fn group_context_menu(tile: &widgets::Tile) -> Option<GroupAction> {
+/// Контекстное меню альбома или исполнителя. Действует на все выделенные плитки —
+/// в подписях их число. Возвращает выбранное действие
+fn group_context_menu(tile: &widgets::Tile, kind: GroupKind) -> Option<GroupAction> {
     let mut action = None;
     tile.response.context_menu(|ui| {
         widgets::menu_style(ui);
-        for (label, menu_action) in GROUP_MENU {
-            if widgets::menu_item(ui, label).clicked() {
+        let items = match (tile.selected, kind) {
+            (1, _) => [
+                ("Play".to_owned(), GroupAction::Play),
+                ("Add to playlist".to_owned(), GroupAction::AddToPlaylist),
+                ("Remove from library".to_owned(), GroupAction::Remove),
+            ],
+            (count, kind) => {
+                let what = match kind {
+                    GroupKind::Album => "albums",
+                    GroupKind::Artist => "artists",
+                    GroupKind::Songs => "tracks",
+                };
+                [
+                    (format!("Play {count} {what}"), GroupAction::Play),
+                    (
+                        format!("Add {count} {what} to playlist"),
+                        GroupAction::AddToPlaylist,
+                    ),
+                    (
+                        format!("Remove {count} {what} from library"),
+                        GroupAction::Remove,
+                    ),
+                ]
+            }
+        };
+        for (label, menu_action) in items {
+            if widgets::menu_item(ui, &label).clicked() {
                 action = Some(menu_action);
             }
         }

@@ -18,7 +18,7 @@ use self::loading::{Destination, PendingLoad};
 use super::{
     covers::CoverCache,
     theme::WINDOW_TINT,
-    widgets::{self, TrackListView},
+    widgets::{self, TileGridView, TrackListView},
 };
 use crate::{
     library::{
@@ -65,6 +65,10 @@ pub struct PlayerApp {
     selected_album: Option<library_views::AlbumKey>,
     /// Список треков открытого альбома
     album_tracks_view: TrackListView,
+    /// Сетки библиотеки — у каждой своё выделение и своя прокрутка
+    artists_grid: TileGridView,
+    albums_grid: TileGridView,
+    artist_albums_grid: TileGridView,
     /// Альбом или исполнитель, удаление которых из библиотеки ждёт подтверждения в диалоге
     pending_removal: Option<library_views::LibraryRemoval>,
     /// Исполнители и альбомы библиотеки — пересчитываются, только когда библиотека изменилась
@@ -105,6 +109,8 @@ impl CentralView {
 enum ListFocus {
     Library,
     Playlist,
+    /// Сетка исполнителей или альбомов
+    Grid,
 }
 
 impl PlayerApp {
@@ -125,6 +131,9 @@ impl PlayerApp {
             selected_artist: None,
             selected_album: None,
             album_tracks_view: TrackListView::new("album_tracks"),
+            artists_grid: TileGridView::new("artists"),
+            albums_grid: TileGridView::new("albums"),
+            artist_albums_grid: TileGridView::new("artist_albums"),
             pending_removal: None,
             groups: LibraryGroups::default(),
             covers: CoverCache::new(),

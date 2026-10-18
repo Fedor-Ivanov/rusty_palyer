@@ -1,8 +1,8 @@
 //! Заголовки блоков и линии на границах панелей.
 
 use eframe::egui::{
-    self, Align, Color32, CursorIcon, FontId, Galley, Rangef, Rect, RichText, Sense, Stroke, Ui,
-    pos2, vec2,
+    self, Align, Color32, CursorIcon, FontId, Galley, Rangef, Rect, Response, RichText, Sense,
+    Stroke, Ui, pos2, vec2,
 };
 use std::sync::Arc;
 
@@ -127,4 +127,31 @@ fn title_galley(ui: &Ui, text: &str, color: Color32, max_width: f32) -> Arc<Gall
 fn paint_in_row(ui: &Ui, row: Rect, x: f32, galley: Arc<Galley>, color: Color32) {
     let y = row.center().y - galley.size().y / 2.0;
     ui.painter().galley(pos2(x, y), galley, color);
+}
+
+/// Текст-ссылка: в покое цвета `color`, при наведении плавно светлеет, курсор — рука.
+/// Не шире доступного места: длинный текст обрезается с «…»
+pub fn text_link(ui: &mut Ui, text: &str, size: f32, color: Color32) -> Response {
+    let galley = |ui: &Ui, color: Color32, max_width: f32| {
+        egui::WidgetText::from(RichText::new(text).size(size).color(color)).into_galley(
+            ui,
+            Some(egui::TextWrapMode::Truncate),
+            max_width,
+            FontId::proportional(size),
+        )
+    };
+    // Место выделяется до отрисовки — цвет зависит от наведения
+    let link_size = galley(ui, color, ui.available_width()).size();
+    let (rect, response) = ui.allocate_exact_size(link_size, Sense::click());
+    let response = response.on_hover_cursor(CursorIcon::PointingHand);
+    let hover = ui.ctx().animate_bool_with_time_and_easing(
+        response.id.with("hover"),
+        response.hovered(),
+        HOVER_FADE_SECS,
+        egui::emath::easing::cubic_out,
+    );
+    let color = color.lerp_to_gamma(TEXT, hover);
+    ui.painter()
+        .galley(rect.min, galley(ui, color, rect.width()), color);
+    response
 }

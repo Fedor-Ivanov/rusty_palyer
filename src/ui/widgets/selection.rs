@@ -1,18 +1,21 @@
-//! Выделение треков в списке: клики с модификаторами и выделение областью мыши.
+//! Выделение в списках треков и сетках плиток: клики с модификаторами и выделение
+//! областью мыши.
 
 use eframe::egui::{self, Pos2};
 use std::collections::BTreeSet;
 
-/// Выделение областью мыши. Начало хранится в координатах содержимого списка, а не экрана:
-/// пока тянут, список может прокручиваться, и экранная точка начала уезжает вместе с ним
+/// Выделение областью мыши. Начало хранится в координатах содержимого (списка или сетки),
+/// а не экрана: пока тянут, содержимое может прокручиваться, и экранная точка начала
+/// уезжает вместе с ним
 pub(super) struct Marquee {
     pub(super) start: Pos2,
     /// Что было выделено до начала (с ⌘/Ctrl область добавляется к нему)
     pub(super) base: BTreeSet<usize>,
 }
 
-/// Выделение в списке треков — как в Finder: клик выделяет один трек, ⌘/Ctrl+клик
-/// добавляет или убирает трек, Shift+клик выделяет диапазон от последнего клика
+/// Выделение — как в Finder: клик выделяет один элемент, ⌘/Ctrl+клик добавляет или убирает
+/// элемент, Shift+клик выделяет диапазон от последнего клика. Элементы — номера строк
+/// списка или плиток сетки
 #[derive(Default)]
 pub(super) struct Selection {
     indices: BTreeSet<usize>,
@@ -49,7 +52,18 @@ impl Selection {
         range: std::ops::RangeInclusive<usize>,
         anchor: usize,
     ) {
-        self.indices = base.iter().copied().chain(range).collect();
+        self.select_many(base, range, anchor);
+    }
+
+    /// Выделение областью в сетке: `base` плюс плитки `items` — рамка захватывает
+    /// прямоугольник плиток, а не диапазон подряд. `anchor` — как у `select_range`
+    pub(super) fn select_many(
+        &mut self,
+        base: &BTreeSet<usize>,
+        items: impl IntoIterator<Item = usize>,
+        anchor: usize,
+    ) {
+        self.indices = base.iter().copied().chain(items).collect();
         self.anchor = Some(anchor);
     }
 
@@ -138,5 +152,19 @@ mod tests {
         // Shift+клик после области считает диапазон от строки, с которой её начали тянуть
         selection.click(7, Modifiers::SHIFT);
         assert_eq!(selected(&selection), [4, 5, 6, 7]);
+    }
+
+    #[test]
+    fn grid_marquee_selects_rectangle_of_tiles() {
+        // Сетка 4 колонки: рамка задела колонки 1–2 в строках 0–1 — это плитки 1, 2, 5, 6,
+        // не диапазон 1..=6
+        let mut selection = Selection::default();
+        selection.select_many(&Default::default(), [1, 2, 5, 6], 1);
+        assert_eq!(selected(&selection), [1, 2, 5, 6]);
+
+        // С ⌘ рамка добавляется к уже выделенному
+        let base = [9].into_iter().collect();
+        selection.select_many(&base, [1, 5], 1);
+        assert_eq!(selected(&selection), [1, 5, 9]);
     }
 }
