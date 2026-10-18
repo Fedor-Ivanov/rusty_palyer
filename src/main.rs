@@ -40,7 +40,7 @@ fn main() -> eframe::Result {
             if let Err(e) = ui::window_glass::apply(cc) {
                 eprintln!("Could not enable the window blur: {e}");
             }
-            Ok(Box::new(ui::PlayerApp::new()))
+            Ok(Box::new(ui::PlayerApp::new(cc.storage)))
         }),
     )
 }

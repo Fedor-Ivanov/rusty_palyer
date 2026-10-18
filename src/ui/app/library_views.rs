@@ -48,6 +48,35 @@ impl AlbumKey {
             && album.artist.to_lowercase() == self.artist.to_lowercase()
     }
 }
+
+/// Поиск в виде библиотеки. Запрос один на открытый вид: при смене вида он очищается
+/// (см. `PlayerApp::set_view`). Artists ищет по имени исполнителя, Albums — по названию
+/// альбома, Songs — по названию трека и имени исполнителя
+#[derive(Default)]
+pub(super) struct LibrarySearch {
+    query: String,
+    /// Найденные треки Songs; `None` — запрос пуст, показана вся библиотека
+    found_songs: Option<FoundSongs>,
+}
+
+impl LibrarySearch {
+    pub(super) fn is_empty(&self) -> bool {
+        self.query.is_empty()
+    }
+}
+
+/// Треки, найденные в Songs. Пересчитываются, только когда изменился запрос или библиотека:
+/// в библиотеке могут быть десятки тысяч треков, а кадры рисуются постоянно
+struct FoundSongs {
+    revision: u64,
+    /// Запрос в нижнем регистре, по которому искали
+    query: String,
+    /// Номера найденных треков в библиотеке
+    indices: Vec<usize>,
+    /// Копии найденных треков — их показывает список
+    tracks: Vec<Track>,
+}
+
 /// Кнопка play поверх обложки альбома: размер и отступ от угла обложки
 const OVERLAY_PLAY_SIZE: f32 = 32.0;
 const OVERLAY_PLAY_INSET: f32 = 8.0;
@@ -127,10 +156,81 @@ impl PlayerApp {
                     self.selected_artist = None;
                 }
             }
+            // Верхний уровень вида — с полем поиска справа. В пустой библиотеке искать нечего
+            (CentralView::Artists | CentralView::Albums | CentralView::Songs, _, _)
+                if !self.library.tracks().is_empty() =>
+            {
+                self.render_title_with_search(ui, view);
+            }
             _ => {
                 widgets::block_title(ui, view.title(), Align::LEFT, TEXT);
             }
         }
+    }
+
+    /// Заголовок вида слева и поле поиска справа. У Songs рядом с заголовком — число треков,
+    /// как «Playlist · N tracks»; во время поиска — сколько найдено: «· 3 of 120 tracks»
+    fn render_title_with_search(&mut self, ui: &mut Ui, view: CentralView) {
+        let note = (view == CentralView::Songs).then(|| {
+            self.refresh_found_songs();
+            let total = self.library.tracks().len();
+            match &self.search.found_songs {
+                Some(found) => format!(
+                    "· {} of {}",
+                    found.indices.len(),
+                    plural(total, "track", "tracks")
+                ),
+                None => format!("· {}", plural(total, "track", "tracks")),
+            }
+        });
+        let query = &mut self.search.query;
+        let changed = widgets::title_with_search(ui, view.title(), query, |ui| match &note {
+            Some(note) => {
+                widgets::block_title_with_note(ui, view.title(), note);
+            }
+            None => {
+                widgets::block_title(ui, view.title(), Align::LEFT, TEXT);
+            }
+        });
+        // Выделение сеток сбрасывается само — запрос входит в их scope. Список Songs
+        // показывает другие треки — его выделение ни на что не указывает
+        if changed && view == CentralView::Songs {
+            self.library_view.clear_selection();
+        }
+    }
+
+    /// Пересчитывает найденные в Songs треки, если изменился запрос или библиотека
+    fn refresh_found_songs(&mut self) {
+        let query = normalized_query(&self.search.query);
+        if query.is_empty() {
+            self.search.found_songs = None;
+            return;
+        }
+        let revision = self.library.revision();
+        let up_to_date = self
+            .search
+            .found_songs
+            .as_ref()
+            .is_some_and(|found| found.revision == revision && found.query == query);
+        if up_to_date {
+            return;
+        }
+        let (indices, tracks) = self
+            .library
+            .tracks()
+            .iter()
+            .enumerate()
+            .filter(|(_, track)| {
+                contains_query(&track.title, &query) || contains_query(&track.artist, &query)
+            })
+            .map(|(index, track)| (index, track.clone()))
+            .unzip();
+        self.search.found_songs = Some(FoundSongs {
+            revision,
+            query,
+            indices,
+            tracks,
+        });
     }
 
     /// Пересчитывает исполнителей и альбомы, если библиотека изменилась
@@ -160,19 +260,29 @@ impl PlayerApp {
             placeholder(ui, "Library is empty");
             return;
         }
+        // Показанные исполнители — номера в `groups.artists`: поиск по имени
+        let query = normalized_query(&self.search.query);
+        let shown: Vec<usize> = (0..artists.len())
+            .filter(|&index| contains_query(&artists[index].name, &query))
+            .collect();
+        if shown.is_empty() {
+            placeholder(ui, "No results");
+            return;
+        }
         // Имя — по центру под круглой картинкой. Сетка заимствует исполнителей —
-        // действие из меню запоминаем и выполняем после неё
+        // действие из меню запоминаем и выполняем после неё. Номера плиток относятся
+        // к библиотеке и запросу — при их изменении выделение сбрасывается
         self.artists_grid
-            .set_scope(&self.library.revision().to_string());
+            .set_scope(&format!("{}/{query}", self.library.revision()));
         let mut action = None;
         let response = self.artists_grid.show(
             ui,
-            artists.len(),
+            shown.len(),
             1,
             Align::Center,
             self.focus == ListFocus::Grid,
             |ui, index, image_rect, tile| {
-                let artist = &artists[index];
+                let artist = &artists[shown[index]];
                 paint_artist_placeholder(ui, image_rect, &artist.name, tile.hover);
                 if let Some(menu_action) = group_context_menu(tile, GroupKind::Artist) {
                     action = Some(menu_action);
@@ -191,14 +301,14 @@ impl PlayerApp {
         }
 
         if let Some(index) = response.opened {
-            self.selected_artist = Some(self.groups.artists[index].name.clone());
+            self.selected_artist = Some(self.groups.artists[shown[index]].name.clone());
         } else if let Some(action) = action {
             // Исполнители — в порядке сетки, их треки — альбом за альбомом
             let names: Vec<String> = self
                 .artists_grid
                 .selection()
                 .iter()
-                .map(|&index| self.groups.artists[index].name.clone())
+                .map(|&index| self.groups.artists[shown[index]].name.clone())
                 .collect();
             let tracks: Vec<usize> = names
                 .iter()
@@ -260,7 +370,7 @@ impl PlayerApp {
         if play_all {
             // Номера треков плейлиста меняются целиком — старое выделение ни на что не указывает
             self.playlist_view.clear_selection();
-            let result = self.controller.play_all(tracks, None);
+            let result = self.controller.play_all(tracks);
             self.set_result(result);
         } else if add_to_playlist {
             self.add_to_playlist(tracks);
@@ -417,9 +527,7 @@ impl PlayerApp {
 
         if play_all {
             self.playlist_view.clear_selection();
-            let result = self
-                .controller
-                .play_all(self.playable_tracks(&indices), None);
+            let result = self.controller.play_all(self.playable_tracks(&indices));
             self.set_result(result);
         } else if add_all {
             let tracks = self.playable_tracks(&indices);
@@ -430,29 +538,10 @@ impl PlayerApp {
         } else if remove_selected || response.delete {
             self.request_songs_removal(&selected);
         } else if let Some(index) = response.activated {
-            self.play_album_from(&indices, index);
+            // Двойной клик играет только этот трек: он встаёт в плейлист, а не заменяет его
+            // альбомом — для альбома целиком есть кнопки «Play all» и «Add to playlist»
+            self.play_from_library(indices[index]);
         }
-    }
-
-    /// Двойной клик по треку альбома: альбом заменяет плейлист и играет с этого трека
-    fn play_album_from(&mut self, indices: &[usize], position: usize) {
-        let Some(&clicked) = indices.get(position) else {
-            return;
-        };
-        if self.library.is_missing(clicked) {
-            self.error = Some("File not found: it was moved or deleted".into());
-            return;
-        }
-        // Номер трека среди тех, что можно сыграть: пропавшие файлы в плейлист не попадают
-        let start = indices[..position]
-            .iter()
-            .filter(|&&index| !self.library.is_missing(index))
-            .count();
-        self.playlist_view.clear_selection();
-        let result = self
-            .controller
-            .play_all(self.playable_tracks(indices), Some(start));
-        self.set_result(result);
     }
 
     /// Все альбомы библиотеки
@@ -465,6 +554,11 @@ impl PlayerApp {
     fn render_album_grid(&mut self, ui: &mut Ui, id_salt: &str, artist: Option<&str>) {
         self.refresh_groups();
         let artist = artist.map(str::to_lowercase);
+        // Поиск по названию — только во всех альбомах, в профиле исполнителя поля нет
+        let query = match artist {
+            Some(_) => String::new(),
+            None => normalized_query(&self.search.query),
+        };
         let albums: Vec<&AlbumGroup> = self
             .groups
             .albums
@@ -473,24 +567,27 @@ impl PlayerApp {
                 artist
                     .as_ref()
                     .is_none_or(|artist| album.artist.to_lowercase() == *artist)
+                    && contains_query(&album.title, &query)
             })
             .collect();
         let covers = &mut self.covers;
-        let artist_name_scope = artist.clone();
         if albums.is_empty() {
             let text = if artist.is_some() {
                 "No albums"
-            } else {
+            } else if self.groups.albums.is_empty() {
                 "Library is empty"
+            } else {
+                "No results"
             };
             placeholder(ui, text);
             return;
         }
         // У каждой сетки своё выделение. Оно относится к содержимому: у профиля исполнителя —
-        // к его альбомам; после изменения библиотеки номера плиток значат другое
+        // к его альбомам, в поиске — к найденным; после изменения библиотеки номера плиток
+        // значат другое
         let scope = format!(
-            "{}/{}",
-            artist_name_scope.as_deref().unwrap_or_default(),
+            "{}/{}/{query}",
+            artist.as_deref().unwrap_or_default(),
             self.library.revision()
         );
         let grid = if id_salt == "artist_albums" {
@@ -604,7 +701,7 @@ impl PlayerApp {
             GroupAction::Play => {
                 // Номера треков плейлиста меняются целиком — старое выделение ни на что не указывает
                 self.playlist_view.clear_selection();
-                let result = self.controller.play_all(self.playable_tracks(tracks), None);
+                let result = self.controller.play_all(self.playable_tracks(tracks));
                 self.set_result(result);
             }
             GroupAction::AddToPlaylist => {
@@ -634,24 +731,56 @@ impl PlayerApp {
             .collect()
     }
 
-    /// Все треки библиотеки списком. Двойной клик добавляет трек в плейлист и запускает его;
-    /// из меню — добавить в плейлист или убрать из библиотеки
+    /// Все треки библиотеки списком — или найденные поиском. Двойной клик добавляет трек
+    /// в плейлист и запускает его; из меню — добавить в плейлист или убрать из библиотеки
     fn render_songs(&mut self, ui: &mut Ui) {
         if self.library.tracks().is_empty() {
             placeholder(ui, "Library is empty");
             return;
         }
+        self.refresh_found_songs();
+        if self
+            .search
+            .found_songs
+            .as_ref()
+            .is_some_and(|found| found.indices.is_empty())
+        {
+            placeholder(ui, "No results");
+            return;
+        }
 
-        // Пока библиотека заимствована списком, менять ничего нельзя — запоминаем, что сделать
+        // «Play all» — показанные треки в порядке списка заменяют плейлист и играют
+        let mut play_all = false;
+        egui::Frame::new()
+            .inner_margin(egui::Margin {
+                left: 16,
+                right: 16,
+                top: 0,
+                bottom: 16,
+            })
+            .show(ui, |ui| {
+                play_all = widgets::pill_button(ui, "Play all", ButtonStyle::Primary).clicked();
+            });
+        if play_all {
+            let shown = self.shown_song_indices();
+            self.playlist_view.clear_selection();
+            let result = self.controller.play_all(self.playable_tracks(&shown));
+            self.set_result(result);
+        }
+
+        // Пока библиотека заимствована списком, менять ничего нельзя — запоминаем, что сделать.
+        // Номера строк списка — номера в `found` (во время поиска) или сразу в библиотеке
         let mut add_to_playlist = false;
         let mut remove = false;
         let library = &self.library;
+        let found = self.search.found_songs.as_ref();
+        let tracks = found.map_or(library.tracks(), |found| &found.tracks);
         let response = self.library_view.show(
             ui,
-            library.tracks(),
+            tracks,
             |index| widgets::RowState {
                 current: false,
-                missing: library.is_missing(index),
+                missing: library.is_missing(found.map_or(index, |found| found.indices[index])),
             },
             self.focus == ListFocus::Library,
             |ui, selected| {
@@ -677,26 +806,41 @@ impl PlayerApp {
         if response.interacted {
             self.focus = ListFocus::Library;
         }
+        let selected: Vec<usize> = self
+            .library_view
+            .selection()
+            .iter()
+            .filter_map(|&index| self.song_index(index))
+            .collect();
         if add_to_playlist {
-            let tracks = self.selected_library_tracks();
+            let tracks = selected
+                .iter()
+                .filter_map(|&index| self.library.tracks().get(index).cloned())
+                .collect();
             self.add_to_playlist(tracks);
         }
         if remove || response.delete {
-            let selected: Vec<usize> = self.library_view.selection().iter().copied().collect();
             self.request_songs_removal(&selected);
         }
-        if let Some(index) = response.activated {
+        if let Some(index) = response.activated.and_then(|index| self.song_index(index)) {
             self.play_from_library(index);
         }
     }
 
-    fn selected_library_tracks(&self) -> Vec<Track> {
-        let tracks = self.library.tracks();
-        self.library_view
-            .selection()
-            .iter()
-            .filter_map(|&index| tracks.get(index).cloned())
-            .collect()
+    /// Номер в библиотеке трека из строки `row` списка Songs
+    fn song_index(&self, row: usize) -> Option<usize> {
+        match &self.search.found_songs {
+            Some(found) => found.indices.get(row).copied(),
+            None => (row < self.library.tracks().len()).then_some(row),
+        }
+    }
+
+    /// Номера в библиотеке всех треков, показанных в Songs, по порядку
+    fn shown_song_indices(&self) -> Vec<usize> {
+        match &self.search.found_songs {
+            Some(found) => found.indices.clone(),
+            None => (0..self.library.tracks().len()).collect(),
+        }
     }
 
     /// Двойной клик в библиотеке: трек сразу играет. Если он уже есть в плейлисте, играет
@@ -719,6 +863,17 @@ impl PlayerApp {
             .and_then(|()| self.controller.play());
         self.set_result(result);
     }
+}
+
+/// Запрос поиска для сравнения: без пробелов по краям, в нижнем регистре
+fn normalized_query(query: &str) -> String {
+    query.trim().to_lowercase()
+}
+
+/// Есть ли `query` (уже из `normalized_query`) в `text` без учёта регистра.
+/// Пустой запрос подходит ко всему
+fn contains_query(text: &str, query: &str) -> bool {
+    query.is_empty() || text.to_lowercase().contains(query)
 }
 
 /// Текст по центру оставшегося места

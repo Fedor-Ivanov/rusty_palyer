@@ -21,6 +21,8 @@ pub enum AudioCmd {
     Resume,
     Stop,
     Seek(Duration),
+    /// Множитель громкости: 0.0 — тишина, 1.0 — исходная громкость
+    SetVolume(f32),
 }
 
 #[derive(Debug)]
@@ -38,6 +40,8 @@ pub fn spawn_audio_thread(position_ms: Arc<AtomicU64>) -> (Sender<AudioCmd>, Rec
             .map_err(|e| format!("Could not open the audio device: {e}"));
 
         let mut player: Option<AudioPlayer> = None;
+        // Громкость переживает смену трека: каждый трек играет через новый плеер
+        let mut volume = 1.0;
 
         loop {
             match rx.recv_timeout(Duration::from_millis(200)) {
@@ -60,6 +64,7 @@ pub fn spawn_audio_thread(position_ms: Arc<AtomicU64>) -> (Sender<AudioCmd>, Rec
                             .map_err(|e| format!("Could not decode the file: {e}"))?;
 
                         let new_player = AudioPlayer::connect_new(device.mixer());
+                        new_player.set_volume(volume);
                         new_player.append(source);
 
                         if !start_at.is_zero() {
@@ -111,6 +116,13 @@ pub fn spawn_audio_thread(position_ms: Arc<AtomicU64>) -> (Sender<AudioCmd>, Rec
                         && let Err(err) = p.try_seek(pos)
                     {
                         eprintln!("Could not seek the track: {err}");
+                    }
+                }
+
+                Ok(AudioCmd::SetVolume(value)) => {
+                    volume = value;
+                    if let Some(p) = &player {
+                        p.set_volume(value);
                     }
                 }
 

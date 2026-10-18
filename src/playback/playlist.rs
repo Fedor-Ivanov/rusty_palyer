@@ -1,12 +1,12 @@
 //! Список треков: порядок воспроизведения, shuffle, повтор, удаление.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 use crate::library::Track;
 
 /// Режим повтора: включён может быть только один
-#[derive(Serialize, Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
 pub enum RepeatMode {
     #[default]
     Off,
@@ -16,7 +16,7 @@ pub enum RepeatMode {
     All,
 }
 
-#[derive(Serialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct TrackList {
     pub tracks: Vec<Track>,
     pub current_index: Option<usize>,

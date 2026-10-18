@@ -130,11 +130,11 @@ impl PlayerApp {
 
         // Переход — как из меню библиотеки: вид целиком, без прошлых вложенных страниц
         if open_artist && let Some(artist) = artist_in_library {
-            self.view = CentralView::Artists;
+            self.set_view(CentralView::Artists);
             self.selected_artist = Some(artist);
             self.selected_album = None;
         } else if open_album && let Some(album) = album_in_library {
-            self.view = CentralView::Albums;
+            self.set_view(CentralView::Albums);
             self.selected_artist = None;
             self.selected_album = Some(album);
             self.album_tracks_view.clear_selection();

@@ -26,7 +26,7 @@ use crate::{
         groups::{AlbumGroup, ArtistGroup},
         loader::Source,
     },
-    playback::{PlayerController, PlayerState},
+    playback::{PlayerController, PlayerState, PlaylistStore, Volume},
 };
 
 // Кнопки-иконки в заголовке библиотеки и в нижнем блоке списка
@@ -38,6 +38,8 @@ const SIDEBAR_DEFAULT_WIDTH: f32 = 240.0;
 const TRACK_LIST_DEFAULT_WIDTH: f32 = 300.0;
 // Минимальная ширина центральной области (CentralPanel): её обеспечивают максимумы боковых панелей
 const CONTENT_MIN_WIDTH: f32 = 260.0;
+// Ключ громкости в хранилище настроек eframe
+const VOLUME_STORAGE_KEY: &str = "volume";
 // Зазор над плашкой текущего трека
 const NOW_PLAYING_BAR_GAP: f32 = 8.0;
 
@@ -53,6 +55,10 @@ pub struct PlayerApp {
     loader_shown_at: Option<Instant>,
     /// Треки, сохранённые между запусками
     library: Library,
+    /// Где плейлист хранится между запусками
+    playlist_store: PlaylistStore,
+    /// Ревизия плейлиста, которая уже сохранена на диск
+    saved_playlist_revision: u64,
     library_view: TrackListView,
     playlist_view: TrackListView,
     /// Какой список получает клавиши (⌘A, Esc, Delete) — тот, с которым работали последним
@@ -69,6 +75,8 @@ pub struct PlayerApp {
     artists_grid: TileGridView,
     albums_grid: TileGridView,
     artist_albums_grid: TileGridView,
+    /// Поиск в открытом виде библиотеки
+    search: library_views::LibrarySearch,
     /// Альбом или исполнитель, удаление которых из библиотеки ждёт подтверждения в диалоге
     pending_removal: Option<library_views::LibraryRemoval>,
     /// Исполнители и альбомы библиотеки — пересчитываются, только когда библиотека изменилась
@@ -114,8 +122,15 @@ enum ListFocus {
 }
 
 impl PlayerApp {
-    pub fn new() -> Self {
-        let (library, error) = Library::load(eframe::storage_dir(crate::APP_NAME));
+    /// `storage` — настройки, сохранённые eframe с прошлого запуска (громкость)
+    pub fn new(storage: Option<&dyn eframe::Storage>) -> Self {
+        let data_dir = eframe::storage_dir(crate::APP_NAME);
+        let (library, mut error) = Library::load(data_dir.clone());
+        let playlist_store = PlaylistStore::new(data_dir);
+        let saved_playlist = playlist_store.load().unwrap_or_else(|e| {
+            error.get_or_insert(e);
+            None
+        });
         let outdated = library.outdated_paths();
         let mut app = Self {
             controller: PlayerController::new(),
@@ -124,6 +139,8 @@ impl PlayerApp {
             loaders: VecDeque::new(),
             loader_shown_at: None,
             library,
+            playlist_store,
+            saved_playlist_revision: 0,
             library_view: TrackListView::new("library"),
             playlist_view: TrackListView::new("playlist"),
             focus: ListFocus::Playlist,
@@ -134,15 +151,57 @@ impl PlayerApp {
             artists_grid: TileGridView::new("artists"),
             albums_grid: TileGridView::new("albums"),
             artist_albums_grid: TileGridView::new("artist_albums"),
+            search: library_views::LibrarySearch::default(),
             pending_removal: None,
             groups: LibraryGroups::default(),
             covers: CoverCache::new(),
         };
+        if let Some(list) = saved_playlist {
+            app.controller.restore_track_list(list);
+        }
+        // Восстановленный плейлист и так лежит на диске
+        app.saved_playlist_revision = app.controller.playlist_revision();
+        if let Some(volume) =
+            storage.and_then(|storage| eframe::get_value::<Volume>(storage, VOLUME_STORAGE_KEY))
+        {
+            app.controller.set_volume(volume);
+        }
         // Библиотека сохранена старым форматом — один раз перечитываем её теги в фоне
         if let Some(paths) = outdated {
             app.start_loading(Source::Files(paths), Destination::LibraryRefresh);
         }
         app
+    }
+
+    /// Переключает центральную область на вид `view`. Поиск относится к виду, который
+    /// был открыт, — при смене вида он очищается
+    fn set_view(&mut self, view: CentralView) {
+        if self.view == view {
+            return;
+        }
+        self.view = view;
+        if !self.search.is_empty() {
+            self.search = library_views::LibrarySearch::default();
+            // Строки Songs во время поиска — найденные треки: выделение относилось к ним
+            self.library_view.clear_selection();
+        }
+    }
+
+    /// Сохраняет плейлист, если за кадр он изменился. Вызывается в конце кадра: сколько бы
+    /// изменений ни было за кадр (например, «Play all» и меняет треки, и выбирает текущий),
+    /// файл пишется один раз
+    fn save_playlist_if_changed(&mut self) {
+        let revision = self.controller.playlist_revision();
+        if revision == self.saved_playlist_revision {
+            return;
+        }
+        // Ревизия считается сохранённой и при ошибке: иначе запись повторялась бы каждый кадр.
+        // Следующее изменение попробует снова
+        self.saved_playlist_revision = revision;
+        let result = self
+            .playlist_store
+            .save(&self.controller.player().track_list);
+        self.set_result(result);
     }
 
     /// Запоминает ошибку для плашки. Успех её не сбрасывает: плашка закрывается только
@@ -158,6 +217,13 @@ impl eframe::App for PlayerApp {
     /// Окно прозрачное: под ним система рисует размытие, поэтому сами ничего не заливаем
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         [0.0; 4]
+    }
+
+    /// eframe вызывает при выходе и периодически во время работы. Громкость меняется
+    /// часто (ползунок тянут) — её достаточно сохранять так. Плейлист сохраняется сам
+    /// после каждого изменения — см. `save_playlist_if_changed`
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        eframe::set_value(storage, VOLUME_STORAGE_KEY, &self.controller.volume());
     }
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
@@ -283,7 +349,7 @@ impl eframe::App for PlayerApp {
                     .show_separator_line(false)
                     .show_collapsible(ui, &mut show_bar, |ui| {
                         if self.render_now_playing_bar(ui) {
-                            self.view = CentralView::NowPlaying;
+                            self.set_view(CentralView::NowPlaying);
                         }
                     });
 
@@ -329,5 +395,7 @@ impl eframe::App for PlayerApp {
         widgets::paint_resize_line(ui, sidebar_rect.right(), sidebar_rect.y_range());
         let track_list_rect = track_list.response.rect;
         widgets::paint_resize_line(ui, track_list_rect.left(), track_list_rect.y_range());
+
+        self.save_playlist_if_changed();
     }
 }

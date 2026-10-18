@@ -1,7 +1,8 @@
-//! Нижняя панель: prev / play-pause / next, время и ползунок перемотки.
+//! Нижняя панель: громкость, prev / play-pause / next, время и ползунок перемотки.
 
 use eframe::egui::{
-    self, Align2, CornerRadius, CursorIcon, FontId, Pos2, Rect, Sense, Ui, pos2, vec2,
+    self, Align2, CornerRadius, CursorIcon, FontId, Id, Order, Pos2, Rangef, Rect, Sense, Stroke,
+    StrokeKind, Ui, Vec2, pos2, vec2,
 };
 
 use super::PlayerApp;
@@ -9,8 +10,8 @@ use crate::{
     playback::PlayerState,
     ui::{
         format::format_secs,
-        icons::{paint_play_pause, paint_skip, skip_hit_rect},
-        theme::{SLIDER_TRACK, TEXT, TEXT_MUTED},
+        icons::{paint_play_pause, paint_skip, paint_volume, skip_hit_rect},
+        theme::{BANNER_BORDER, BANNER_FILL, HOVER_FADE_SECS, SLIDER_TRACK, TEXT, TEXT_MUTED},
         widgets,
     },
 };
@@ -22,6 +23,17 @@ const SKIP_BUTTON_SIZE: f32 = 40.0;
 const SKIP_BUTTON_GAP: f32 = 4.0;
 const SLIDER_TRACK_HEIGHT: f32 = 5.0;
 const SLIDER_THUMB_RADIUS: f32 = 8.0;
+const VOLUME_BUTTON_SIZE: f32 = 24.0;
+/// Вертикальный блок с ползунком громкости над кнопкой: размер, зазор до кнопки,
+/// скругление, отступы сверху и снизу
+const VOLUME_POPUP_SIZE: Vec2 = vec2(36.0, 140.0);
+const VOLUME_POPUP_GAP: f32 = 6.0;
+const VOLUME_POPUP_RADIUS: u8 = 12;
+const VOLUME_POPUP_PADDING: f32 = 14.0;
+const VOLUME_TRACK_WIDTH: f32 = 4.0;
+const VOLUME_THUMB_RADIUS: f32 = 6.0;
+/// Прокрутка колесом над громкостью: сколько точек прокрутки на всю шкалу
+const VOLUME_SCROLL_RANGE: f32 = 400.0;
 
 impl PlayerApp {
     pub(super) fn toggle_play(&mut self) {
@@ -34,6 +46,8 @@ impl PlayerApp {
     }
 
     pub(super) fn render_controls(&mut self, ui: &mut Ui) {
+        self.render_volume(ui);
+
         let player = self.controller.player();
         let has_track = player.current_track.is_some();
         let playing = player.state == PlayerState::Playing;
@@ -183,19 +197,150 @@ impl PlayerApp {
             0.0
         };
 
-        let painter = ui.painter();
-        let track = Rect::from_center_size(rect.center(), vec2(rect.width(), SLIDER_TRACK_HEIGHT));
-        painter.rect_filled(track, CornerRadius::same(255), SLIDER_TRACK);
-
-        let thumb_x = track.left() + track.width() * fraction;
-        let filled = Rect::from_min_max(track.min, pos2(thumb_x, track.max.y));
-        painter.rect_filled(filled, CornerRadius::same(255), TEXT);
-
-        // Ползунок не вылезает за края окна. max/min вместо clamp: на очень узком
-        // окне левая граница может оказаться правее правой, и clamp паникует
-        let thumb_x = thumb_x
-            .min(rect.right() - SLIDER_THUMB_RADIUS)
-            .max(rect.left() + SLIDER_THUMB_RADIUS);
-        painter.circle_filled(pos2(thumb_x, rect.center().y), SLIDER_THUMB_RADIUS, TEXT);
+        paint_slider(ui, rect, fraction, SLIDER_TRACK_HEIGHT, SLIDER_THUMB_RADIUS);
     }
+
+    /// Строка громкости: кнопка у правого края, над оставшимся временем. Клик — mute.
+    /// При наведении над кнопкой появляется блок с ползунком; он не прячется, пока курсор
+    /// на кнопке, на блоке или между ними и пока ползунок тянут
+    fn render_volume(&mut self, ui: &mut Ui) {
+        let (row, _) = ui.allocate_exact_size(
+            vec2(ui.available_width(), VOLUME_BUTTON_SIZE),
+            Sense::hover(),
+        );
+        let button_rect = Rect::from_min_size(
+            pos2(row.right() - VOLUME_BUTTON_SIZE, row.top()),
+            vec2(VOLUME_BUTTON_SIZE, VOLUME_BUTTON_SIZE),
+        );
+        let button =
+            widgets::icon_button(ui, button_rect, widgets::HitShape::Circle, "volume", true);
+        let button_hovered = button.response.hovered();
+        if button.clicked {
+            self.controller.toggle_mute();
+        }
+        paint_volume(
+            ui,
+            button_rect,
+            self.controller.volume().audible(),
+            button.hover,
+        );
+
+        // Блок по центру над кнопкой, но в пределах окна
+        let window = ui.ctx().content_rect();
+        let mut popup = Rect::from_center_size(
+            pos2(
+                button_rect.center().x,
+                button_rect.top() - VOLUME_POPUP_GAP - VOLUME_POPUP_SIZE.y / 2.0,
+            ),
+            VOLUME_POPUP_SIZE,
+        );
+        popup = popup.translate(vec2((window.right() - popup.right()).min(0.0), 0.0));
+
+        let popup_id = Id::unique("volume_popup");
+        let slider_id = popup_id.with("slider");
+        let was_open = ui.data(|data| {
+            data.get_temp::<bool>(popup_id.with("open"))
+                .unwrap_or(false)
+        });
+        // Прямоугольник, охватывающий кнопку и блок: курсор идёт от кнопки к блоку через зазор
+        let in_zone = ui
+            .ctx()
+            .pointer_hover_pos()
+            .is_some_and(|pos| button_rect.union(popup).expand(4.0).contains(pos));
+        let open = button_hovered || (was_open && in_zone) || ui.ctx().is_being_dragged(slider_id);
+        ui.data_mut(|data| data.insert_temp(popup_id.with("open"), open));
+        let visibility = ui.ctx().animate_bool_with_time_and_easing(
+            popup_id.with("fade"),
+            open,
+            HOVER_FADE_SECS,
+            egui::emath::easing::cubic_out,
+        );
+        if visibility == 0.0 {
+            return;
+        }
+
+        // Колесо мыши над кнопкой или блоком — тоже громкость
+        if open && in_zone {
+            let scroll = ui.input(|input| input.smooth_scroll_delta.y);
+            if scroll != 0.0 {
+                let level = self.controller.volume().audible() + scroll / VOLUME_SCROLL_RANGE;
+                self.controller.set_volume_level(level);
+            }
+        }
+
+        // Блок — поверх центральной области: он выше нижней панели
+        let mut level = None;
+        let audible = self.controller.volume().audible();
+        egui::Area::new(popup_id)
+            .order(Order::Foreground)
+            .fixed_pos(popup.min)
+            .constrain(false)
+            .show(ui.ctx(), |ui| {
+                ui.multiply_opacity(visibility);
+                let (rect, _) = ui.allocate_exact_size(popup.size(), Sense::hover());
+                ui.painter().rect(
+                    rect,
+                    VOLUME_POPUP_RADIUS,
+                    BANNER_FILL,
+                    Stroke::new(1.0, BANNER_BORDER),
+                    StrokeKind::Inside,
+                );
+
+                // Тянуть можно за всю ширину блока, а не только за тонкую дорожку
+                let slider = rect.shrink2(vec2(0.0, VOLUME_POPUP_PADDING));
+                let response = ui
+                    .interact(slider, slider_id, Sense::click_and_drag())
+                    .on_hover_cursor(CursorIcon::PointingHand);
+                let scale = vertical_scale(slider, VOLUME_THUMB_RADIUS);
+                if (response.dragged() || response.clicked())
+                    && let Some(pos) = response.interact_pointer_pos()
+                {
+                    // Снизу вверх: внизу тишина, вверху максимум
+                    level = Some(((scale.max - pos.y) / scale.span()).clamp(0.0, 1.0));
+                }
+                paint_vertical_slider(ui, slider, level.unwrap_or(audible));
+            });
+        if let Some(level) = level {
+            self.controller.set_volume_level(level);
+        }
+    }
+}
+
+/// Ползунок в `rect`: дорожка высотой `track_height` во всю ширину, заполненная до
+/// `fraction` (0.0..=1.0), и круглый бегунок радиуса `thumb_radius`
+fn paint_slider(ui: &Ui, rect: Rect, fraction: f32, track_height: f32, thumb_radius: f32) {
+    let painter = ui.painter();
+    let track = Rect::from_center_size(rect.center(), vec2(rect.width(), track_height));
+    painter.rect_filled(track, CornerRadius::same(255), SLIDER_TRACK);
+
+    let thumb_x = track.left() + track.width() * fraction;
+    let filled = Rect::from_min_max(track.min, pos2(thumb_x, track.max.y));
+    painter.rect_filled(filled, CornerRadius::same(255), TEXT);
+
+    // Бегунок не вылезает за края. max/min вместо clamp: на очень узком
+    // окне левая граница может оказаться правее правой, и clamp паникует
+    let thumb_x = thumb_x
+        .min(rect.right() - thumb_radius)
+        .max(rect.left() + thumb_radius);
+    painter.circle_filled(pos2(thumb_x, rect.center().y), thumb_radius, TEXT);
+}
+
+/// Где по высоте ходит центр бегунка вертикального ползунка в `rect`: от низа (0.0) до
+/// верха (1.0), с отступом на радиус бегунка — он не вылезает за края
+fn vertical_scale(rect: Rect, thumb_radius: f32) -> Rangef {
+    Rangef::new(rect.top() + thumb_radius, rect.bottom() - thumb_radius)
+}
+
+/// Вертикальный ползунок громкости в `rect`: дорожка по центру, заполненная снизу до
+/// `fraction` (0.0..=1.0), и круглый бегунок
+fn paint_vertical_slider(ui: &Ui, rect: Rect, fraction: f32) {
+    let painter = ui.painter();
+    let track = Rect::from_center_size(rect.center(), vec2(VOLUME_TRACK_WIDTH, rect.height()));
+    painter.rect_filled(track, CornerRadius::same(255), SLIDER_TRACK);
+
+    let scale = vertical_scale(rect, VOLUME_THUMB_RADIUS);
+    let thumb_y = scale.max - scale.span() * fraction;
+    let filled = Rect::from_min_max(pos2(track.left(), thumb_y), track.max);
+    painter.rect_filled(filled, CornerRadius::same(255), TEXT);
+    painter.circle_filled(pos2(rect.center().x, thumb_y), VOLUME_THUMB_RADIUS, TEXT);
 }

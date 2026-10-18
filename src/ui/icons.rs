@@ -1,4 +1,5 @@
-//! Иконки кнопок плеера, нарисованные фигурами: play/pause, prev/next, shuffle, repeat, «+».
+//! Иконки кнопок плеера, нарисованные фигурами: play/pause, prev/next, shuffle, repeat, «+»,
+//! громкость.
 
 use super::theme::{HIGHLIGHT_STRONG, ICON, ICON_DISABLED, ICON_OFF, ICON_SOFT};
 use eframe::egui::{self, Color32, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
@@ -104,6 +105,22 @@ const REPEAT_ARROWS: [[(f32, f32); 3]; 2] = [
 // «1» внутри петли для повтора одного трека — тоньше, чтобы поместиться
 const REPEAT_ONE_MARK: [(f32, f32); 3] = [(10.75, 11.25), (12.0, 10.0), (12.0, 14.0)];
 const REPEAT_ONE_STROKE: f32 = 1.5;
+
+// Иконка громкости: динамик из двух выпуклых фигур (корпус и раструб), справа от него —
+// волны-дуги с центром у раструба или крестик, если звук выключен
+const SPEAKER_SHAPES: [&[(f32, f32)]; 2] = [
+    &[(3.5, 10.0), (6.5, 10.0), (6.5, 14.0), (3.5, 14.0)],
+    &[(6.0, 10.0), (10.5, 6.0), (10.5, 18.0), (6.0, 14.0)],
+];
+const SPEAKER_CORNER_RADIUS: f32 = 1.0;
+const VOLUME_WAVE_CENTER: (f32, f32) = (11.0, 12.0);
+const VOLUME_WAVE_RADII: [f32; 2] = [3.5, 7.0];
+/// Половина угла дуги волны, в радианах (±45°)
+const VOLUME_WAVE_HALF_ANGLE: f32 = std::f32::consts::FRAC_PI_4;
+const VOLUME_WAVE_STROKE: f32 = 1.8;
+/// Громкость, начиная с которой видна вторая волна
+const VOLUME_LOUD: f32 = 0.5;
+const MUTE_CROSS: [[(f32, f32); 2]; 2] = [[(14.5, 9.5), (19.5, 14.5)], [(14.5, 14.5), (19.5, 9.5)]];
 
 /// Круг-подложка круглой кнопки. Возвращает цвет, которым рисовать иконку.
 fn paint_button_bg(ui: &Ui, rect: Rect, disabled: bool, hover: f32) -> Color32 {
@@ -290,4 +307,70 @@ pub fn paint_overlay_play(ui: &Ui, rect: Rect, visibility: f32, hover: f32) {
         PLAY_CORNER_RADIUS,
         ICON.gamma_multiply(visibility),
     );
+}
+
+/// Лупа в поле поиска: кружок и ручка вниз вправо. Тонкие линии — иконка рядом с текстом
+pub fn paint_search(ui: &Ui, rect: Rect, color: Color32) {
+    let stroke = Stroke::new(1.4, color);
+    let radius = rect.width() * 0.3;
+    let center = rect.center() - vec2(rect.width() * 0.08, rect.height() * 0.08);
+    let painter = ui.painter();
+    painter.circle_stroke(center, radius, stroke);
+    let direction = vec2(1.0, 1.0).normalized();
+    painter.line_segment(
+        [
+            center + direction * radius,
+            center + direction * rect.width() * 0.48,
+        ],
+        stroke,
+    );
+}
+
+/// Кнопка очистки поля поиска: крестик в круге, круг светлеет при наведении
+pub fn paint_clear(ui: &Ui, rect: Rect, hover: f32) {
+    let painter = ui.painter();
+    painter.circle_filled(
+        rect.center(),
+        rect.width() / 2.0,
+        ICON_DISABLED.lerp_to_gamma(ICON_OFF, hover),
+    );
+    let arm = rect.width() * 0.18;
+    let stroke = Stroke::new(1.4, Color32::from_rgb(0x1C, 0x1C, 0x1E));
+    for (from, to) in [
+        (vec2(-arm, -arm), vec2(arm, arm)),
+        (vec2(-arm, arm), vec2(arm, -arm)),
+    ] {
+        painter.line_segment([rect.center() + from, rect.center() + to], stroke);
+    }
+}
+
+/// Кнопка громкости. `volume` — слышимая громкость 0.0..=1.0: в нуле (или с выключенным
+/// звуком) — крестик, тише `VOLUME_LOUD` — одна волна, громче — две.
+/// `hover`: 0.0..=1.0, плавный переход наведения
+pub fn paint_volume(ui: &Ui, rect: Rect, volume: f32, hover: f32) {
+    paint_hover_circle(ui, rect, hover);
+    for shape in SPEAKER_SHAPES {
+        let points: Vec<Pos2> = shape.iter().map(|&(x, y)| pos2(x, y)).collect();
+        fill_icon_shape(ui, rect, &points, SPEAKER_CORNER_RADIUS, ICON);
+    }
+
+    if volume == 0.0 {
+        for line in MUTE_CROSS {
+            stroke_icon_path(ui, rect, &line, VOLUME_WAVE_STROKE, ICON);
+        }
+        return;
+    }
+    let waves = if volume < VOLUME_LOUD { 1 } else { 2 };
+    for radius in &VOLUME_WAVE_RADII[..waves] {
+        const SEGMENTS: usize = 12;
+        let (cx, cy) = VOLUME_WAVE_CENTER;
+        let arc: Vec<(f32, f32)> = (0..=SEGMENTS)
+            .map(|i| {
+                let t = i as f32 / SEGMENTS as f32;
+                let angle = -VOLUME_WAVE_HALF_ANGLE + 2.0 * VOLUME_WAVE_HALF_ANGLE * t;
+                (cx + radius * angle.cos(), cy + radius * angle.sin())
+            })
+            .collect();
+        stroke_icon_path(ui, rect, &arc, VOLUME_WAVE_STROKE, ICON);
+    }
 }

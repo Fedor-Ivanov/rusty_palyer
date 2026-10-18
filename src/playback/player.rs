@@ -1,6 +1,6 @@
 //! Управление воспроизведением: текущий трек, play/pause, переходы, связь с аудиопотоком.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
     sync::{
@@ -41,12 +41,43 @@ impl Default for Player {
     }
 }
 
+/// Громкость: положение ползунка и mute. Запоминается между запусками
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq)]
+pub struct Volume {
+    /// Положение ползунка: 0.0..=1.0
+    pub level: f32,
+    pub muted: bool,
+}
+
+impl Default for Volume {
+    fn default() -> Self {
+        Self {
+            level: 1.0,
+            muted: false,
+        }
+    }
+}
+
+impl Volume {
+    /// Громкость, которую слышно: 0.0, если звук выключен или ползунок в нуле
+    pub fn audible(self) -> f32 {
+        if self.muted { 0.0 } else { self.level }
+    }
+}
+
+/// Громкость, с которой включается звук, если ползунок стоял в нуле
+const UNMUTE_LEVEL: f32 = 0.5;
+
 /// Состояние плеера + связь с аудиопотоком. Аналог `AppState` и команд из Tauri-версии.
 pub struct PlayerController {
     player: Player,
     audio: Sender<AudioCmd>,
     events: Receiver<AudioEvent>,
     position_ms: Arc<AtomicU64>,
+    volume: Volume,
+    /// Растёт при каждом изменении плейлиста (треки, текущий трек, shuffle, повтор):
+    /// по нему видно, что плейлист пора сохранить
+    playlist_revision: u64,
 }
 
 impl Default for PlayerController {
@@ -65,6 +96,8 @@ impl PlayerController {
             audio,
             events,
             position_ms,
+            volume: Volume::default(),
+            playlist_revision: 0,
         }
     }
 
@@ -74,6 +107,56 @@ impl PlayerController {
 
     pub fn position_ms(&self) -> u64 {
         self.position_ms.load(Ordering::Relaxed)
+    }
+
+    pub fn playlist_revision(&self) -> u64 {
+        self.playlist_revision
+    }
+
+    pub fn volume(&self) -> Volume {
+        self.volume
+    }
+
+    /// Ставит громкость целиком — например, сохранённую с прошлого запуска
+    pub fn set_volume(&mut self, volume: Volume) {
+        self.volume = Volume {
+            level: volume.level.clamp(0.0, 1.0),
+            muted: volume.muted,
+        };
+        // Слух воспринимает громкость примерно логарифмически: с квадратом ползунка
+        // середина звучит как середина, а не почти как максимум
+        let gain = self.volume.audible().powi(2);
+        // Аудиопоток живёт, пока жив контроллер: отправка не может не дойти
+        let _ = self.audio.send(AudioCmd::SetVolume(gain));
+    }
+
+    /// Ползунок громкости: двигать его — значит и включить звук, если он был выключен
+    pub fn set_volume_level(&mut self, level: f32) {
+        self.set_volume(Volume {
+            level,
+            muted: false,
+        });
+    }
+
+    /// Кнопка mute. Включает звук, если он не слышен — выключен или ползунок в нуле
+    /// (тогда ползунок встаёт на середину); иначе выключает, запоминая положение ползунка
+    pub fn toggle_mute(&mut self) {
+        let volume = self.volume;
+        self.set_volume(if volume.audible() == 0.0 {
+            Volume {
+                level: if volume.level == 0.0 {
+                    UNMUTE_LEVEL
+                } else {
+                    volume.level
+                },
+                muted: false,
+            }
+        } else {
+            Volume {
+                muted: true,
+                ..volume
+            }
+        });
     }
 
     /// Обрабатывает события аудиопотока. Вызывать в начале каждого кадра.
@@ -115,6 +198,21 @@ impl PlayerController {
         Ok(())
     }
 
+    /// Восстанавливает плейлист прошлого запуска: те же треки, режимы shuffle и повтора.
+    /// Текущий трек выбран, но не играет — как будто его только что выбрали
+    pub fn restore_track_list(&mut self, mut list: TrackList) {
+        list.current_index = list
+            .current_index
+            .filter(|&index| index < list.tracks.len());
+        self.player.current_track = list.current_index.map(|index| list.tracks[index].clone());
+        self.player.state = PlayerState::Stopped;
+        // Перемешанный порядок не сохраняется — перемешиваем заново
+        if list.shuffle {
+            list.reshuffle();
+        }
+        self.player.track_list = list;
+    }
+
     /// Добавляет треки в конец списка. Текущий трек и воспроизведение не меняются.
     pub fn append_tracks(&mut self, tracks: impl IntoIterator<Item = Track>) {
         let list = &mut self.player.track_list;
@@ -125,18 +223,19 @@ impl PlayerController {
         let mut added: Vec<usize> = (first_new..list.tracks.len()).collect();
         fastrand::shuffle(&mut added);
         list.shuffle_order.extend(added);
+        self.playlist_revision += 1;
     }
 
-    /// Заменяет весь плейлист треками `tracks` и запускает воспроизведение. `start` — номер
-    /// трека, с которого начать; без него — с первого, а при включённом shuffle — со случайного
-    pub fn play_all(&mut self, tracks: Vec<Track>, start: Option<usize>) -> Result<(), String> {
+    /// Заменяет весь плейлист треками `tracks` и запускает воспроизведение с первого из них,
+    /// а при включённом shuffle — со случайного
+    pub fn play_all(&mut self, tracks: Vec<Track>) -> Result<(), String> {
         let list = &mut self.player.track_list;
         list.tracks = tracks;
-        list.current_index = start.filter(|&index| index < list.tracks.len());
-        // Выбранный трек при перемешивании встаёт первым — остальные играют после него
+        list.current_index = None;
         list.reshuffle();
-        // Без выбранного трека «следующий» — первый в порядке воспроизведения
-        let Some(first) = list.current_index.or_else(|| list.neighbor(1, true)) else {
+        self.playlist_revision += 1;
+        // Без текущего трека «следующий» — первый в порядке воспроизведения
+        let Some(first) = list.neighbor(1, true) else {
             self.player.current_track = None;
             self.player.state = PlayerState::Stopped;
             self.position_ms.store(0, Ordering::Relaxed);
@@ -155,6 +254,7 @@ impl PlayerController {
             .current_index
             .is_some_and(|current| indices.contains(&current));
         self.player.track_list.remove(indices);
+        self.playlist_revision += 1;
 
         if removes_current {
             self.player.current_track = None;
@@ -172,6 +272,7 @@ impl PlayerController {
         if list.shuffle {
             list.reshuffle();
         }
+        self.playlist_revision += 1;
     }
 
     /// Включает режим повтора; повторное нажатие на уже включённый — выключает
@@ -182,6 +283,7 @@ impl PlayerController {
         } else {
             mode
         };
+        self.playlist_revision += 1;
     }
 
     /// Делает текущим трек из списка по его позиции.
@@ -195,6 +297,7 @@ impl PlayerController {
             .ok_or("There is no track with this number in the list")?;
         self.set_current_track(track)?;
         self.player.track_list.current_index = Some(index);
+        self.playlist_revision += 1;
         Ok(())
     }
 

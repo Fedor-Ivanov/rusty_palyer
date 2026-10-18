@@ -8,6 +8,7 @@ mod grid;
 mod layout;
 mod menu;
 mod nav;
+mod search;
 mod selection;
 mod track_list;
 
@@ -21,4 +22,5 @@ pub use layout::{
 };
 pub use menu::{menu_item, menu_style};
 pub use nav::{NOW_PLAYING_BAR_HEIGHT, nav_item, now_playing_bar};
+pub use search::title_with_search;
 pub use track_list::{RowState, TrackListView};

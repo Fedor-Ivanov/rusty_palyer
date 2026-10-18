@@ -20,7 +20,7 @@ impl PlayerApp {
                 CentralView::Songs,
             ] {
                 if widgets::nav_item(ui, view.title(), view.title(), self.view == view).clicked() {
-                    self.view = view;
+                    self.set_view(view);
                     // Пункт меню всегда открывает вид целиком: из профиля исполнителя
                     // или альбома — обратно к верхнему уровню
                     self.selected_artist = None;

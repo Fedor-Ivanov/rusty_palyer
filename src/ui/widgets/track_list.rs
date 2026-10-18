@@ -90,7 +90,8 @@ impl TrackListView {
             return response;
         }
 
-        if keyboard {
+        // Пока набирают текст (например, в поиске), Backspace и ⌘A — для текста, а не для списка
+        if keyboard && !ui.ctx().text_edit_focused() {
             let (delete, select_all, deselect) = ui.input(|i| {
                 (
                     i.key_pressed(Key::Delete) || i.key_pressed(Key::Backspace),
