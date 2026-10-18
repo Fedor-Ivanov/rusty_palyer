@@ -29,12 +29,24 @@ pub(super) enum Destination {
     Library,
     /// Только послушать сейчас, в библиотеку не попадают
     Playlist,
+    /// Перечитать теги треков, уже лежащих в библиотеке (после смены формата)
+    LibraryRefresh,
 }
 
 /// Фоновое добавление в очереди
 pub(super) struct PendingLoad {
     pub(super) loader: Loader,
     destination: Destination,
+}
+
+impl PendingLoad {
+    /// Что делаем — для плашки прогресса
+    pub(super) fn action(&self) -> &'static str {
+        match self.destination {
+            Destination::Library | Destination::Playlist => "Adding",
+            Destination::LibraryRefresh => "Updating library",
+        }
+    }
 }
 
 impl PlayerApp {
@@ -47,6 +59,7 @@ impl PlayerApp {
         let id_salt = match destination {
             Destination::Library => "add_to_library",
             Destination::Playlist => "add_to_playlist",
+            Destination::LibraryRefresh => "refresh_library",
         };
         let add = widgets::icon_button(ui, add_rect, widgets::HitShape::Circle, id_salt, true);
         paint_add(ui, add_rect, add.hover);
@@ -88,12 +101,12 @@ impl PlayerApp {
         self.start_loading(Source::Folder(dir), destination);
     }
 
-    fn start_loading(&mut self, source: Source, destination: Destination) {
+    pub(super) fn start_loading(&mut self, source: Source, destination: Destination) {
         // Что уже есть в библиотеке, второй раз не читаем: повторное добавление
         // той же папки добавит только новые файлы
         let skip = match destination {
             Destination::Library => self.library.paths().clone(),
-            Destination::Playlist => HashSet::new(),
+            Destination::Playlist | Destination::LibraryRefresh => HashSet::new(),
         };
         self.loaders.push_back(PendingLoad {
             loader: Loader::start(source, skip),
@@ -136,6 +149,14 @@ impl PlayerApp {
 
     /// Кладёт добавленные треки по назначению — все разом
     fn apply_loaded(&mut self, finished: Finished, destination: Destination) {
+        // Обновление библиотеки: файлы, которые не удалось прочитать, просто остаются
+        // как были (пропавшие и так помечены) — ошибки не показываем
+        if destination == Destination::LibraryRefresh {
+            let result = self.library.refresh(finished.tracks);
+            self.set_result(result);
+            return;
+        }
+
         if !finished.tracks.is_empty() {
             match destination {
                 Destination::Library => {
@@ -143,6 +164,7 @@ impl PlayerApp {
                     self.set_result(result);
                 }
                 Destination::Playlist => self.add_to_playlist(finished.tracks),
+                Destination::LibraryRefresh => unreachable!("обработано выше"),
             }
         }
 

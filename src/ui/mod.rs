@@ -1,6 +1,7 @@
 //! Интерфейс на egui.
 
 mod app;
+mod covers;
 mod format;
 mod icons;
 mod theme;

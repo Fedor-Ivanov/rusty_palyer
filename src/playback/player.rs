@@ -15,7 +15,7 @@ use super::{
     audio::{self, AudioCmd, AudioEvent},
     playlist::{RepeatMode, TrackList},
 };
-use crate::library::{Track, metadata};
+use crate::library::Track;
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq)]
 pub enum PlayerState {
@@ -103,14 +103,12 @@ impl PlayerController {
     }
 
     /// Делает трек текущим. Воспроизведение не начинается — для этого есть `play`.
-    fn set_current_track(&mut self, mut track: Track) -> Result<(), String> {
+    fn set_current_track(&mut self, track: Track) -> Result<(), String> {
         // Если что-то уже играло, останавливаем: выбран другой трек
         self.audio.send(AudioCmd::Stop).map_err(|e| e.to_string())?;
 
         self.position_ms.store(0, Ordering::Relaxed);
 
-        // Обложку читаем только для текущего трека — у треков в списке её нет
-        track.album_cover = metadata::read_cover(&track.path);
         self.player.current_track = Some(track);
         self.player.state = PlayerState::Stopped;
 
@@ -127,6 +125,25 @@ impl PlayerController {
         let mut added: Vec<usize> = (first_new..list.tracks.len()).collect();
         fastrand::shuffle(&mut added);
         list.shuffle_order.extend(added);
+    }
+
+    /// Заменяет весь плейлист треками `tracks` и запускает воспроизведение. `start` — номер
+    /// трека, с которого начать; без него — с первого, а при включённом shuffle — со случайного
+    pub fn play_all(&mut self, tracks: Vec<Track>, start: Option<usize>) -> Result<(), String> {
+        let list = &mut self.player.track_list;
+        list.tracks = tracks;
+        list.current_index = start.filter(|&index| index < list.tracks.len());
+        // Выбранный трек при перемешивании встаёт первым — остальные играют после него
+        list.reshuffle();
+        // Без выбранного трека «следующий» — первый в порядке воспроизведения
+        let Some(first) = list.current_index.or_else(|| list.neighbor(1, true)) else {
+            self.player.current_track = None;
+            self.player.state = PlayerState::Stopped;
+            self.position_ms.store(0, Ordering::Relaxed);
+            return self.audio.send(AudioCmd::Stop).map_err(|e| e.to_string());
+        };
+        self.select(first)?;
+        self.play()
     }
 
     /// Удаляет треки из списка. Если среди них текущий, воспроизведение останавливается

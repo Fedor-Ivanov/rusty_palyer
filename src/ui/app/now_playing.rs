@@ -1,13 +1,18 @@
-//! Центральная область: информация о текущем треке и обложка, без треков — «Open files».
+//! Центральная область: информация о текущем треке и обложка, без треков — «Open files»;
+//! плашка текущего трека, пока открыт вид библиотеки.
 
-use eframe::egui::{self, CursorIcon, Rect, RichText, Ui};
+use eframe::egui::{self, CursorIcon, Rect, RichText, Sense, Ui, vec2};
 
 use super::{PlayerApp, loading::Destination};
 use crate::ui::{
+    covers::CoverSize,
     format::format_secs,
     theme::{TEXT, TEXT_MUTED},
     widgets,
 };
+
+const COVER_MAX_SIZE: f32 = 250.0;
+const COVER_RADIUS: u8 = 12;
 
 impl PlayerApp {
     /// Кнопка по центру всего оставшегося места
@@ -56,9 +61,22 @@ impl PlayerApp {
                 ui.add_space(8.0);
 
                 ui.vertical_centered(|ui| {
-                    widgets::album_cover(ui, track.album_cover.as_deref());
+                    let side = ui.available_width().min(COVER_MAX_SIZE);
+                    let (rect, _) = ui.allocate_exact_size(vec2(side, side), Sense::hover());
+                    let cover = self.covers.get(&track.path, CoverSize::Large);
+                    widgets::paint_cover(ui, rect, cover, COVER_RADIUS);
                 });
             }
         });
+    }
+
+    /// Плашка текущего трека внизу центральной области. Возвращает `true`, если по ней кликнули
+    pub(super) fn render_now_playing_bar(&mut self, ui: &mut Ui) -> bool {
+        let Some(track) = &self.controller.player().current_track else {
+            return false;
+        };
+        widgets::now_playing_bar(ui, &track.title, &track.artist)
+            .on_hover_text("Show the current track")
+            .clicked()
     }
 }

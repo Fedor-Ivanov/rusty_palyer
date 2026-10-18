@@ -1,8 +1,16 @@
 //! Кнопки-иконки с точной областью нажатия и плавным наведением.
 
-use eframe::egui::{self, CursorIcon, Pos2, Rect, Response, Sense, Ui};
+use eframe::egui::{self, Align2, CursorIcon, FontId, Pos2, Rect, Response, Sense, Ui, vec2};
 
-use crate::ui::theme::{HOVER_FADE_SECS, TRACK_ACTIVE_FADE_SECS};
+use crate::ui::theme::{
+    DESTRUCTIVE_BUTTON_FILL, DESTRUCTIVE_BUTTON_HOVER, HIGHLIGHT_STRONG, HOVER_FADE_SECS,
+    PRIMARY_BUTTON_FILL, PRIMARY_BUTTON_HOVER, PRIMARY_BUTTON_TEXT, SECONDARY_BUTTON_HOVER, TEXT,
+    TRACK_ACTIVE_FADE_SECS,
+};
+
+const PILL_HEIGHT: f32 = 32.0;
+const PILL_PADDING: f32 = 18.0;
+const PILL_TEXT_SIZE: f32 = 14.0;
 
 /// Форма области, в которой кнопка реагирует на курсор
 pub enum HitShape {
@@ -77,4 +85,56 @@ pub fn toggle_button(
     let clicked = button.clicked;
     button.response.on_hover_text(tooltip);
     (clicked, active, button.hover)
+}
+
+/// Вид кнопки-«пилюли»
+#[derive(Clone, Copy)]
+pub enum ButtonStyle {
+    /// Главное действие: светлая заливка и тёмный текст
+    Primary,
+    /// Полупрозрачная
+    Secondary,
+    /// Действие, которое что-то удаляет: красная
+    Destructive,
+}
+
+/// Кнопка-«пилюля» с текстом. При наведении плавно меняет яркость
+pub fn pill_button(ui: &mut Ui, label: &str, style: ButtonStyle) -> Response {
+    let font = FontId::proportional(PILL_TEXT_SIZE);
+    let text_width = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font.clone(), TEXT)
+        .size()
+        .x;
+    let (rect, response) = ui.allocate_exact_size(
+        vec2(text_width + 2.0 * PILL_PADDING, PILL_HEIGHT),
+        Sense::click(),
+    );
+    let response = response.on_hover_cursor(CursorIcon::PointingHand);
+    let hover = ui.ctx().animate_bool_with_time_and_easing(
+        response.id.with("hover"),
+        response.hovered(),
+        HOVER_FADE_SECS,
+        egui::emath::easing::cubic_out,
+    );
+    let (fill, text) = match style {
+        // Светлая кнопка при наведении чуть темнеет
+        ButtonStyle::Primary => (
+            PRIMARY_BUTTON_FILL.lerp_to_gamma(PRIMARY_BUTTON_HOVER, hover),
+            PRIMARY_BUTTON_TEXT,
+        ),
+        // Полупрозрачная — при наведении светлеет
+        ButtonStyle::Secondary => (
+            HIGHLIGHT_STRONG.lerp_to_gamma(SECONDARY_BUTTON_HOVER, hover),
+            TEXT,
+        ),
+        ButtonStyle::Destructive => (
+            DESTRUCTIVE_BUTTON_FILL.lerp_to_gamma(DESTRUCTIVE_BUTTON_HOVER, hover),
+            TEXT,
+        ),
+    };
+    ui.painter().rect_filled(rect, PILL_HEIGHT / 2.0, fill);
+    ui.painter()
+        .text(rect.center(), Align2::CENTER_CENTER, label, font, text);
+    response
 }

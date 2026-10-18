@@ -8,6 +8,7 @@ use crate::{
     library::Track,
     playback::RepeatMode,
     ui::{
+        format::plural,
         icons::{paint_repeat, paint_shuffle},
         theme::{TEXT, TEXT_FAINT},
         widgets,
@@ -22,7 +23,15 @@ impl PlayerApp {
         // Вся область панели — запоминаем до заголовка, чтобы заглушка встала по её центру
         let panel_rect = ui.max_rect();
         egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
-            let row = widgets::block_title(ui, "Playlist", Align::LEFT, TEXT);
+            // Рядом с заголовком — сколько треков в плейлисте; пустой — без числа:
+            // там и так «No tracks»
+            let count = self.controller.player().track_list.tracks.len();
+            let row = if count == 0 {
+                widgets::block_title(ui, "Playlist", Align::LEFT, TEXT)
+            } else {
+                let note = format!("· {}", plural(count, "track", "tracks"));
+                widgets::block_title_with_note(ui, "Playlist", &note)
+            };
             self.render_add_button(ui, row, Destination::Playlist);
         });
 

@@ -63,7 +63,12 @@ pub fn error_banner(ctx: &egui::Context, message: &str, top: f32) -> bool {
 /// ошибки. `progress` — сколько обработано и сколько всего; `None`, пока идёт обход папки
 /// и общее число неизвестно. Возвращает, нажали ли «Cancel», и нижний край плашки —
 /// чтобы плашку ошибки поставить под ней, а не поверх.
-pub fn loading_banner(ctx: &egui::Context, progress: Option<(usize, usize)>) -> (bool, f32) {
+/// `action` — что делаем, в начале текста: «Adding», «Updating library».
+pub fn loading_banner(
+    ctx: &egui::Context,
+    action: &str,
+    progress: Option<(usize, usize)>,
+) -> (bool, f32) {
     let mut cancel = false;
     let response = egui::Area::new(egui::Id::unique("loading_banner"))
         .order(egui::Order::Foreground)
@@ -79,7 +84,7 @@ pub fn loading_banner(ctx: &egui::Context, progress: Option<(usize, usize)>) -> 
                     ui.set_width(LOADING_BANNER_WIDTH);
                     ui.horizontal(|ui| {
                         let text = match progress {
-                            Some((done, total)) => format!("Adding {done} of {total}"),
+                            Some((done, total)) => format!("{action} {done} of {total}"),
                             None => {
                                 ui.add(egui::Spinner::new().size(12.0).color(TEXT_MUTED));
                                 "Scanning folder…".to_owned()

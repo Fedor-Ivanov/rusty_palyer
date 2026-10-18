@@ -10,11 +10,15 @@ pub struct Track {
     pub artist: String,
     pub duration_secs: u64,
     pub album: String,
-    /// Читается только у текущего трека (см. `PlayerController::set_current_track`): обложки всего
-    /// списка заняли бы слишком много памяти. У треков в списке всегда `None`.
-    /// В файл библиотеки не сохраняется
-    #[serde(skip)]
-    pub album_cover: Option<Vec<u8>>,
+    /// Год из тегов. В старых файлах библиотеки поля нет — тогда `None`
+    #[serde(default)]
+    pub year: Option<u16>,
+    /// Номер трека и диска из тегов — порядок треков в альбоме. В старых файлах
+    /// библиотеки полей нет — тогда `None`
+    #[serde(default)]
+    pub track_number: Option<u32>,
+    #[serde(default)]
+    pub disc_number: Option<u32>,
 }
 
 impl Track {
@@ -29,7 +33,9 @@ impl Track {
             artist: meta.artist,
             album: meta.album,
             duration_secs: meta.duration_secs,
-            album_cover: None,
+            year: meta.year,
+            track_number: meta.track_number,
+            disc_number: meta.disc_number,
         })
     }
 }

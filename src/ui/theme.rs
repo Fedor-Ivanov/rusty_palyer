@@ -34,10 +34,26 @@ pub const HIGHLIGHT: Color32 = Color32::from_rgba_premultiplied(18, 18, 18, 18);
 /// Подсветка активного элемента, подложка круглых кнопок
 pub const HIGHLIGHT_STRONG: Color32 = Color32::from_rgba_premultiplied(40, 40, 40, 40);
 
+/// Толщина рамки выделения: выделенная строка, рамка выделения областью, плитка
+/// с открытым контекстным меню. Цвет рамки — HIGHLIGHT_STRONG
+pub const SELECTION_STROKE_WIDTH: f32 = 1.5;
+
 /// Рамка выделения областью мыши — в тон выделенным строкам: обводка того же цвета,
 /// что рамка выделения и подсветка играющего трека, заливка — как подсветка при наведении
 pub const MARQUEE_FILL: Color32 = HIGHLIGHT;
 pub const MARQUEE_STROKE: Color32 = HIGHLIGHT_STRONG;
+
+/// Главная кнопка действия («Play all»): светлая, с тёмным текстом — заметнее остальных
+pub const PRIMARY_BUTTON_FILL: Color32 = TEXT;
+pub const PRIMARY_BUTTON_TEXT: Color32 = Color32::from_rgb(0x16, 0x16, 0x18);
+pub const PRIMARY_BUTTON_HOVER: Color32 = Color32::from_rgb(0xD6, 0xD6, 0xDA);
+/// Кнопка удаления: красная, при наведении темнее
+pub const DESTRUCTIVE_BUTTON_FILL: Color32 = Color32::from_rgb(0xD9, 0x3F, 0x3F);
+pub const DESTRUCTIVE_BUTTON_HOVER: Color32 = Color32::from_rgb(0xB8, 0x32, 0x32);
+/// Затемнение окна под модальным диалогом
+pub const MODAL_BACKDROP: Color32 = Color32::from_black_alpha(120);
+/// Второстепенная кнопка в покое — HIGHLIGHT_STRONG, при наведении — светлее
+pub const SECONDARY_BUTTON_HOVER: Color32 = Color32::from_rgba_premultiplied(66, 66, 66, 66);
 
 /// Незаполненная часть ползунка
 pub const SLIDER_TRACK: Color32 = Color32::from_rgba_premultiplied(55, 55, 55, 55);

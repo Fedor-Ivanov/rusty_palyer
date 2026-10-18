@@ -55,6 +55,9 @@ const PAUSE_BARS: [[(f32, f32); 4]; 2] = [
     [(15.0, 6.0), (17.0, 6.0), (17.0, 18.0), (15.0, 18.0)],
 ];
 const PLAY_CORNER_RADIUS: f32 = 1.0;
+/// Непрозрачность тёмного круга кнопки play поверх обложки: в покое и при наведении
+const OVERLAY_PLAY_ALPHA: u8 = 150;
+const OVERLAY_PLAY_HOVER_ALPHA: u8 = 200;
 const PAUSE_CORNER_RADIUS: f32 = 1.0;
 /// Непрозрачность белого круга под иконкой play: в покое и при наведении
 const PLAY_BG_OPACITY: f32 = 0.15;
@@ -266,4 +269,25 @@ pub fn paint_repeat(ui: &Ui, rect: Rect, one: bool, active: f32, hover: f32) {
     if one {
         stroke_icon_path(ui, rect, &REPEAT_ONE_MARK, REPEAT_ONE_STROKE, color);
     }
+}
+
+/// Кнопка play поверх обложки: тёмный полупрозрачный круг с белым треугольником — видна
+/// на любой обложке. `visibility` — проявление вместе с наведением на плитку (0.0..=1.0),
+/// `hover` — наведение на саму кнопку: круг темнеет
+pub fn paint_overlay_play(ui: &Ui, rect: Rect, visibility: f32, hover: f32) {
+    let circle = Color32::from_black_alpha(OVERLAY_PLAY_ALPHA)
+        .lerp_to_gamma(Color32::from_black_alpha(OVERLAY_PLAY_HOVER_ALPHA), hover);
+    ui.painter().circle_filled(
+        rect.center(),
+        rect.width() / 2.0,
+        circle.gamma_multiply(visibility),
+    );
+    let triangle = PLAY_TRIANGLE.map(|(x, y)| pos2(x, y));
+    fill_icon_shape(
+        ui,
+        rect,
+        &triangle,
+        PLAY_CORNER_RADIUS,
+        ICON.gamma_multiply(visibility),
+    );
 }

@@ -117,8 +117,10 @@ mod tests {
                     title: i.to_string(),
                     artist: String::new(),
                     duration_secs: 0,
+                    year: None,
+                    track_number: None,
+                    disc_number: None,
                     album: String::new(),
-                    album_cover: None,
                 })
                 .collect(),
             shuffle_order: vec![3, 0, 4, 1, 2],

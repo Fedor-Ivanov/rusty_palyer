@@ -10,8 +10,8 @@ use crate::{
     ui::{
         format::format_secs,
         theme::{
-            HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, MARQUEE_FILL, MARQUEE_STROKE, TEXT,
-            TEXT_FAINT, TEXT_MUTED, TRACK_ACTIVE_FADE_SECS,
+            HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, MARQUEE_FILL, MARQUEE_STROKE,
+            SELECTION_STROKE_WIDTH, TEXT, TEXT_FAINT, TEXT_MUTED, TRACK_ACTIVE_FADE_SECS,
         },
     },
 };
@@ -21,8 +21,6 @@ use crate::{
 const TRACK_ROW_HEIGHT: f32 = 30.0;
 const TRACK_ROW_PADDING: f32 = 8.0;
 const TRACK_ROW_GAP: f32 = 6.0;
-// Толщина рамки выделенной строки и рамки выделения областью
-const SELECTION_STROKE_WIDTH: f32 = 1.5;
 // Скорость автопрокрутки при выделении областью: точек в секунду на каждую точку,
 // на которую курсор ушёл за край списка
 const MARQUEE_AUTOSCROLL_SPEED: f32 = 8.0;

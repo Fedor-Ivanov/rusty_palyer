@@ -14,11 +14,14 @@ pub struct FileMetadata {
     pub artist: String,
     pub album: String,
     pub duration_secs: u64,
+    pub year: Option<u16>,
+    pub track_number: Option<u32>,
+    pub disc_number: Option<u32>,
 }
 
 pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
-    // Обложку здесь не читаем: метаданные читаются для всего списка, а обложка нужна
-    // только текущему треку (см. read_cover). Держать тысячи обложек в памяти дорого
+    // Обложку здесь не читаем: метаданные читаются для всего списка, а обложки нужны только
+    // видимым на экране — их по требованию читает кэш обложек (см. read_cover)
     let tagged = Probe::open(path)
         .map_err(|e| format!("Could not open the file: {e}"))?
         .options(ParseOptions::new().read_cover_art(false))
@@ -46,16 +49,24 @@ pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
         .unwrap_or_default();
 
     let duration_secs = tagged.properties().duration().as_secs();
+    // Год — из даты записи или отдельного поля года, смотря что есть в тегах
+    let year = tag.and_then(|t| t.date()).map(|date| date.year);
+    // Номер трека и диска — для порядка треков в альбоме
+    let track_number = tag.and_then(|t| t.track());
+    let disc_number = tag.and_then(|t| t.disk());
 
     Ok(FileMetadata {
         title,
         artist,
         album,
         duration_secs,
+        year,
+        track_number,
+        disc_number,
     })
 }
 
-/// Обложка альбома из тегов файла. Читается по требованию — для текущего трека.
+/// Обложка альбома из тегов файла. Читается по требованию — кэшем обложек интерфейса.
 pub fn read_cover(path: &Path) -> Option<Vec<u8>> {
     let tagged = Probe::open(path).ok()?.read().ok()?;
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;

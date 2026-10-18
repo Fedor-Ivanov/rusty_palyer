@@ -11,8 +11,9 @@ use std::{
 use super::Track;
 
 const FILE_NAME: &str = "library.json";
-/// Версия формата файла: пригодится, если формат придётся менять
-const FORMAT_VERSION: u32 = 1;
+/// Версия формата файла. 2 — в треках появился год, 3 — номера трека и диска: библиотеку
+/// старой версии нужно один раз перечитать из тегов (см. `outdated_paths`)
+const FORMAT_VERSION: u32 = 3;
 
 #[derive(Serialize, Deserialize)]
 struct Stored {
@@ -28,6 +29,12 @@ pub struct Library {
     missing: HashSet<PathBuf>,
     /// Куда сохранять; `None` — папка данных недоступна, библиотека живёт только до выхода
     file: Option<PathBuf>,
+    /// Версия формата, с которой сохранять. Пока старая библиотека не перечитана из тегов,
+    /// сохраняется со старой версией — иначе после перезапуска её бы сочли обновлённой
+    version: u32,
+    /// Растёт при каждом изменении: по нему видно, что производные данные (группы по
+    /// исполнителям и альбомам) пора пересчитать
+    revision: u64,
 }
 
 impl Library {
@@ -39,6 +46,8 @@ impl Library {
             paths: HashSet::new(),
             missing: HashSet::new(),
             file: dir.map(|dir| dir.join(FILE_NAME)),
+            version: FORMAT_VERSION,
+            revision: 0,
         };
         let Some(file) = &library.file else {
             return (
@@ -78,11 +87,38 @@ impl Library {
             .collect();
         library.paths = stored.tracks.iter().map(|t| t.path.clone()).collect();
         library.tracks = stored.tracks;
+        library.version = stored.version;
         (library, None)
     }
 
     pub fn tracks(&self) -> &[Track] {
         &self.tracks
+    }
+
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// Библиотека сохранена старой версией и в ней не хватает данных из тегов — пути всех
+    /// её треков, чтобы перечитать их. `None` — библиотека актуальна
+    pub fn outdated_paths(&self) -> Option<Vec<PathBuf>> {
+        (self.version < FORMAT_VERSION && !self.tracks.is_empty())
+            .then(|| self.tracks.iter().map(|t| t.path.clone()).collect())
+    }
+
+    /// Заменяет данные треков на перечитанные из тегов (по пути) и сохраняет библиотеку уже
+    /// новой версией. Треки, которых нет в `fresh` (файл пропал), остаются как были
+    pub fn refresh(&mut self, fresh: Vec<Track>) -> Result<(), String> {
+        let mut fresh: std::collections::HashMap<PathBuf, Track> =
+            fresh.into_iter().map(|t| (t.path.clone(), t)).collect();
+        for track in &mut self.tracks {
+            if let Some(updated) = fresh.remove(&track.path) {
+                *track = updated;
+            }
+        }
+        self.version = FORMAT_VERSION;
+        self.revision += 1;
+        self.save()
     }
 
     /// Пути, которые уже есть в библиотеке: при повторном добавлении папки их не читаем заново
@@ -109,6 +145,7 @@ impl Library {
         if self.tracks.len() == before {
             return Ok(());
         }
+        self.revision += 1;
         self.save()
     }
 
@@ -124,6 +161,7 @@ impl Library {
             }
             keep
         });
+        self.revision += 1;
         self.save()
     }
 
@@ -134,7 +172,7 @@ impl Library {
         write_atomically(
             file,
             &Stored {
-                version: FORMAT_VERSION,
+                version: self.version,
                 tracks: self.tracks.clone(),
             },
         )
@@ -166,8 +204,10 @@ mod tests {
             title: path.file_stem().unwrap().to_string_lossy().into_owned(),
             artist: "Artist".into(),
             duration_secs: 60,
+            year: None,
+            track_number: None,
+            disc_number: None,
             album: String::new(),
-            album_cover: None,
         }
     }
 
@@ -202,6 +242,41 @@ mod tests {
         assert!(!library.is_missing(0));
         assert!(library.is_missing(1));
         assert!(library.paths().contains(&b));
+
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn old_library_is_refreshed_once() {
+        let dir = std::env::temp_dir().join(format!("rusty_player_v1_{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.mp3");
+        // Библиотека в формате 1: у трека нет года
+        fs::write(
+            dir.join("library.json"),
+            format!(
+                r#"{{"version":1,"tracks":[{{"path":{:?},"title":"a","artist":"","duration_secs":1,"album":""}}]}}"#,
+                path
+            ),
+        )
+        .unwrap();
+
+        let (mut library, error) = Library::load(Some(dir.clone()));
+        assert!(error.is_none());
+        assert_eq!(library.tracks()[0].year, None);
+        assert_eq!(library.outdated_paths(), Some(vec![path.clone()]));
+
+        // Добавление до обновления не должно пометить библиотеку обновлённой
+        library.add(vec![track(&dir.join("b.mp3"))]).unwrap();
+        let (mut library, _) = Library::load(Some(dir.clone()));
+        assert!(library.outdated_paths().is_some());
+
+        let mut fresh = track(&path);
+        fresh.year = Some(1999);
+        library.refresh(vec![fresh]).unwrap();
+        let (library, _) = Library::load(Some(dir.clone()));
+        assert_eq!(library.outdated_paths(), None);
+        assert_eq!(library.tracks()[0].year, Some(1999));
 
         fs::remove_dir_all(&dir).unwrap();
     }

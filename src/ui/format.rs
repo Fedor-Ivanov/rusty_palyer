@@ -11,3 +11,8 @@ pub fn format_secs(seconds: f32) -> String {
         format!("{m:02}:{s:02}")
     }
 }
+
+/// Число со словом в нужной форме: «1 track», «3 tracks»
+pub fn plural(count: usize, one: &str, many: &str) -> String {
+    format!("{count} {}", if count == 1 { one } else { many })
+}
