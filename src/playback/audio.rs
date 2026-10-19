@@ -30,7 +30,12 @@ pub enum AudioEvent {
     TrackEnded,
 }
 
-pub fn spawn_audio_thread(position_ms: Arc<AtomicU64>) -> (Sender<AudioCmd>, Receiver<AudioEvent>) {
+/// Запускает аудиопоток. `wake` он вызывает после каждого события: кто их получает,
+/// должен проснуться и забрать их, даже если окно скрыто и само не перерисовывается
+pub fn spawn_audio_thread(
+    position_ms: Arc<AtomicU64>,
+    wake: impl Fn() + Send + 'static,
+) -> (Sender<AudioCmd>, Receiver<AudioEvent>) {
     let (tx, rx) = mpsc::channel::<AudioCmd>();
     let (event_tx, event_rx) = mpsc::channel::<AudioEvent>();
 
@@ -133,6 +138,7 @@ pub fn spawn_audio_thread(position_ms: Arc<AtomicU64>) -> (Sender<AudioCmd>, Rec
                         player = None;
                         position_ms.store(0, Ordering::Relaxed);
                         let _ = event_tx.send(AudioEvent::TrackEnded);
+                        wake();
                     } else if let Some(p) = &player {
                         position_ms.store(p.get_pos().as_millis() as u64, Ordering::Relaxed);
                     }

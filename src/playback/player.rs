@@ -80,16 +80,12 @@ pub struct PlayerController {
     playlist_revision: u64,
 }
 
-impl Default for PlayerController {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl PlayerController {
-    pub fn new() -> Self {
+    /// `wake` вызывается из аудиопотока, когда для `poll_events` появилось событие
+    /// (трек доиграл): по нему нужно вызвать `poll_events`, не дожидаясь действий пользователя
+    pub fn new(wake: impl Fn() + Send + 'static) -> Self {
         let position_ms = Arc::new(AtomicU64::new(0));
-        let (audio, events) = audio::spawn_audio_thread(position_ms.clone());
+        let (audio, events) = audio::spawn_audio_thread(position_ms.clone(), wake);
 
         Self {
             player: Player::default(),

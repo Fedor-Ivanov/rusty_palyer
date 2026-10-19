@@ -122,8 +122,9 @@ enum ListFocus {
 }
 
 impl PlayerApp {
-    /// `storage` — настройки, сохранённые eframe с прошлого запуска (громкость)
-    pub fn new(storage: Option<&dyn eframe::Storage>) -> Self {
+    /// Из `cc` берутся настройки, сохранённые eframe с прошлого запуска (громкость),
+    /// и контекст egui — чтобы аудиопоток мог разбудить приложение
+    pub fn new(cc: &eframe::CreationContext) -> Self {
         let data_dir = eframe::storage_dir(crate::APP_NAME);
         let (library, mut error) = Library::load(data_dir.clone());
         let playlist_store = PlaylistStore::new(data_dir);
@@ -133,7 +134,11 @@ impl PlayerApp {
         });
         let outdated = library.outdated_paths();
         let mut app = Self {
-            controller: PlayerController::new(),
+            controller: PlayerController::new({
+                // Трек доиграл — будим приложение: eframe вызовет `logic` и при скрытом окне
+                let ctx = cc.egui_ctx.clone();
+                move || ctx.request_repaint()
+            }),
             error,
             drag_secs: None,
             loaders: VecDeque::new(),
@@ -161,8 +166,9 @@ impl PlayerApp {
         }
         // Восстановленный плейлист и так лежит на диске
         app.saved_playlist_revision = app.controller.playlist_revision();
-        if let Some(volume) =
-            storage.and_then(|storage| eframe::get_value::<Volume>(storage, VOLUME_STORAGE_KEY))
+        if let Some(volume) = cc
+            .storage
+            .and_then(|storage| eframe::get_value::<Volume>(storage, VOLUME_STORAGE_KEY))
         {
             app.controller.set_volume(volume);
         }
@@ -187,9 +193,9 @@ impl PlayerApp {
         }
     }
 
-    /// Сохраняет плейлист, если за кадр он изменился. Вызывается в конце кадра: сколько бы
-    /// изменений ни было за кадр (например, «Play all» и меняет треки, и выбирает текущий),
-    /// файл пишется один раз
+    /// Сохраняет плейлист, если он изменился. Вызывается в конце `logic` (изменения без окна:
+    /// следующий трек) и в конце `ui` (изменения из интерфейса). Сколько бы изменений ни было
+    /// за кадр (например, «Play all» и меняет треки, и выбирает текущий), файл пишется один раз
     fn save_playlist_if_changed(&mut self) {
         let revision = self.controller.playlist_revision();
         if revision == self.saved_playlist_revision {
@@ -226,18 +232,26 @@ impl eframe::App for PlayerApp {
         eframe::set_value(storage, VOLUME_STORAGE_KEY, &self.controller.volume());
     }
 
-    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+    /// Всё, что должно работать и без интерфейса: eframe вызывает это перед каждым `ui`,
+    /// а когда окно скрыто (другой рабочий стол, свёрнуто, закрыто другими окнами) и `ui`
+    /// не вызывается совсем — по `request_repaint`. Так следующий трек включается, даже
+    /// когда окно не видно: аудиопоток будит приложение, когда трек доиграл
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Трек доиграл — переходим к следующему в очереди
         if self.controller.poll_events()
             && let Err(e) = self.controller.play_next()
         {
             self.error = Some(e);
         }
+        self.poll_loaders(ctx);
+        self.save_playlist_if_changed();
+    }
 
-        self.poll_loaders(ui.ctx());
+    fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         self.covers.update(ui.ctx());
 
-        // Пока трек играет, обновляем время и ползунок
+        // Пока трек играет, обновляем время и ползунок. Это перерисовка видимого окна;
+        // переход к следующему треку от неё не зависит — см. `logic`
         if self.controller.player().state == PlayerState::Playing {
             ui.ctx().request_repaint_after(Duration::from_millis(100));
         }
