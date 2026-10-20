@@ -181,6 +181,11 @@ impl PlayerApp {
         }
         // Восстановленный плейлист и так лежит на диске
         app.saved_playlist_revision = app.controller.playlist_revision();
+        // Последнего трека нет (первый запуск или его не было при выходе) — в Now Playing
+        // показать нечего, открываем альбомы
+        if app.controller.player().current_track.is_none() {
+            app.view = CentralView::Albums;
+        }
         app.controller.set_volume(app.settings.volume());
         i18n::set_language(app.settings.language());
         // Библиотека сохранена старым форматом — один раз перечитываем её теги в фоне
