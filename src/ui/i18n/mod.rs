@@ -1,0 +1,307 @@
+//! Локализация интерфейса: все тексты на английском, французском, русском и украинском.
+//!
+//! Тексты одного языка — значение `Texts` (см. `en.rs`, `fr.rs`, `ru.rs`, `uk.rs`). Забытый в переводе текст
+//! не даст собрать проект: у структуры нет значений по умолчанию.
+//! Тексты с подстановками — шаблоны с `{имя}`, их заполняет `fill`. Числа со словом —
+//! `Texts::count`: в русском и украинском у слова три формы (1 трек, 2 трека, 5 треков).
+//!
+//! Новый язык: вариант в `settings::Language` (и в `Language::ALL`), файл с его `Texts`
+//! и строки в `t()` и `language_name` — компилятор подскажет, где не хватает.
+//!
+//! Язык один на всё приложение: виджетам он нужен без лишних параметров, поэтому текущий
+//! язык — глобальный (`set_language`), а тексты берутся через `t()`.
+
+mod en;
+mod fr;
+mod ru;
+mod uk;
+
+use std::sync::atomic::{AtomicU8, Ordering};
+
+use crate::settings::Language;
+
+/// Правило форм числа в русском и украинском: 1, 21, 101 — «трек»; 2–4, 22–24 — «трека»;
+/// 0, 5–20, 25–30, 111–114 — «треков»
+fn slavic_plural_form(count: usize) -> PluralForm {
+    match (count % 10, count % 100) {
+        (1, rest) if rest != 11 => PluralForm::One,
+        (2..=4, rest) if !(12..=14).contains(&rest) => PluralForm::Few,
+        _ => PluralForm::Many,
+    }
+}
+
+/// Слово в формах для разных чисел. В английском `few` совпадает с `many`
+pub struct Plural {
+    one: &'static str,
+    few: &'static str,
+    many: &'static str,
+}
+
+impl Plural {
+    /// Две формы — как в английском: 1 track, 2 tracks
+    const fn two(one: &'static str, many: &'static str) -> Self {
+        Self {
+            one,
+            few: many,
+            many,
+        }
+    }
+
+    /// Три формы — как в русском: 1 трек, 2 трека, 5 треков
+    const fn three(one: &'static str, few: &'static str, many: &'static str) -> Self {
+        Self { one, few, many }
+    }
+}
+
+/// Какая форма слова нужна для числа
+pub enum PluralForm {
+    One,
+    Few,
+    Many,
+}
+
+pub struct Texts {
+    /// Какую форму слова брать для числа — правило языка
+    plural_form: fn(usize) -> PluralForm,
+
+    // ---- разделы
+    pub library: &'static str,
+    pub now_playing: &'static str,
+    pub artists: &'static str,
+    pub albums: &'static str,
+    pub songs: &'static str,
+    pub playlist: &'static str,
+    pub settings: &'static str,
+
+    // ---- слова для чисел
+    pub track_count: Plural,
+    pub song_count: Plural,
+    pub album_count: Plural,
+    pub artist_count: Plural,
+    /// «…и ещё N файлов не удалось добавить»
+    pub more_file_count: Plural,
+
+    // ---- заглушки
+    pub no_tracks: &'static str,
+    pub library_empty: &'static str,
+    pub no_results: &'static str,
+    pub no_albums: &'static str,
+
+    // ---- поиск и счётчики в заголовках
+    pub search: &'static str,
+    /// Сколько найдено в Songs: `{found}`, `{tracks}` — всего треков с числом
+    pub found_of: &'static str,
+
+    // ---- добавление файлов
+    pub open_files: &'static str,
+    pub add_files: &'static str,
+    pub add_folder: &'static str,
+    /// Фильтр в окне выбора файлов
+    pub audio_files: &'static str,
+    /// Плашка прогресса: `{done}`, `{total}`
+    pub adding_progress: &'static str,
+    pub updating_library_progress: &'static str,
+    pub scanning_folder: &'static str,
+    pub no_audio_found: &'static str,
+    /// Хвост списка ошибок добавления: `{more}` — число со словом из `more_file_count`
+    pub more_files_failed: &'static str,
+
+    // ---- переходы и подсказки
+    pub show_artist: &'static str,
+    pub show_album: &'static str,
+    pub show_current_track: &'static str,
+    pub file_missing: &'static str,
+    pub shuffle: &'static str,
+    pub repeat_all: &'static str,
+    pub repeat_one: &'static str,
+
+    // ---- действия
+    pub play: &'static str,
+    pub play_all: &'static str,
+    pub add_to_playlist: &'static str,
+    pub remove_from_library: &'static str,
+    pub remove_from_playlist: &'static str,
+    /// Действия с несколькими выделенными: `{items}` — число со словом
+    pub play_items: &'static str,
+    pub add_items_to_playlist: &'static str,
+    pub remove_items_from_library: &'static str,
+    pub remove_items_from_playlist: &'static str,
+    pub remove: &'static str,
+    pub cancel: &'static str,
+    pub ok: &'static str,
+    pub done: &'static str,
+
+    // ---- настройки
+    pub language: &'static str,
+
+    // ---- диалог удаления из медиатеки
+    pub remove_album_title: &'static str,
+    /// `{album}`
+    pub remove_album_message: &'static str,
+    /// `{albums}`
+    pub remove_albums_title: &'static str,
+    /// `{albums}`, `{tracks}`
+    pub remove_albums_message: &'static str,
+    pub remove_artist_title: &'static str,
+    /// `{artist}`
+    pub remove_artist_message: &'static str,
+    /// `{artists}`
+    pub remove_artists_title: &'static str,
+    /// `{artists}`, `{tracks}`
+    pub remove_artists_message: &'static str,
+    pub remove_song_title: &'static str,
+    /// `{song}`
+    pub remove_song_message: &'static str,
+    /// `{songs}`
+    pub remove_songs_title: &'static str,
+    /// `{songs}`
+    pub remove_songs_message: &'static str,
+}
+
+impl Texts {
+    /// Число со словом в нужной форме: «3 tracks», «3 трека»
+    pub fn count(&self, count: usize, word: &Plural) -> String {
+        let form = match (self.plural_form)(count) {
+            PluralForm::One => word.one,
+            PluralForm::Few => word.few,
+            PluralForm::Many => word.many,
+        };
+        format!("{count} {form}")
+    }
+}
+
+/// Шаблон с подставленными значениями: `{name}` в `template` заменяется на значение
+pub fn fill(template: &str, values: &[(&str, &str)]) -> String {
+    values
+        .iter()
+        .fold(template.to_owned(), |text, (name, value)| {
+            text.replace(&format!("{{{name}}}"), value)
+        })
+}
+
+/// Название языка на нём самом — так языки показывают в списке выбора: кто не понимает
+/// текущий язык интерфейса, всё равно найдёт свой
+pub fn language_name(language: Language) -> &'static str {
+    match language {
+        Language::English => "English",
+        Language::French => "Français",
+        Language::Russian => "Русский",
+        Language::Ukrainian => "Українська",
+    }
+}
+
+static LANGUAGE: AtomicU8 = AtomicU8::new(0);
+
+/// Делает `language` языком интерфейса — со следующего кадра им пишутся все тексты
+pub fn set_language(language: Language) {
+    LANGUAGE.store(language as u8, Ordering::Relaxed);
+}
+
+/// Тексты на текущем языке
+pub fn t() -> &'static Texts {
+    let value = LANGUAGE.load(Ordering::Relaxed);
+    let language = Language::ALL
+        .into_iter()
+        .find(|&language| language as u8 == value)
+        .unwrap_or_default();
+    match language {
+        Language::English => &en::TEXTS,
+        Language::French => &fr::TEXTS,
+        Language::Russian => &ru::TEXTS,
+        Language::Ukrainian => &uk::TEXTS,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Texts, en, fill, fr, ru, uk};
+    use std::collections::BTreeSet;
+
+    /// Шаблоны с подстановками — чтобы сравнить их наборы `{…}` в языках
+    fn templates(t: &Texts) -> [(&'static str, &'static str); 17] {
+        [
+            ("found_of", t.found_of),
+            ("adding_progress", t.adding_progress),
+            ("updating_library_progress", t.updating_library_progress),
+            ("more_files_failed", t.more_files_failed),
+            ("play_items", t.play_items),
+            ("add_items_to_playlist", t.add_items_to_playlist),
+            ("remove_items_from_library", t.remove_items_from_library),
+            ("remove_items_from_playlist", t.remove_items_from_playlist),
+            ("remove_album_message", t.remove_album_message),
+            ("remove_albums_title", t.remove_albums_title),
+            ("remove_albums_message", t.remove_albums_message),
+            ("remove_artist_message", t.remove_artist_message),
+            ("remove_artists_title", t.remove_artists_title),
+            ("remove_artists_message", t.remove_artists_message),
+            ("remove_song_message", t.remove_song_message),
+            ("remove_songs_title", t.remove_songs_title),
+            ("remove_songs_message", t.remove_songs_message),
+        ]
+    }
+
+    fn placeholders(template: &str) -> BTreeSet<&str> {
+        template
+            .split('{')
+            .skip(1)
+            .filter_map(|part| part.split_once('}').map(|(name, _)| name))
+            .collect()
+    }
+
+    #[test]
+    fn translations_have_same_placeholders() {
+        for (language, texts) in [("fr", &fr::TEXTS), ("ru", &ru::TEXTS), ("uk", &uk::TEXTS)] {
+            for ((name, english), (_, translated)) in
+                templates(&en::TEXTS).into_iter().zip(templates(texts))
+            {
+                assert_eq!(
+                    placeholders(english),
+                    placeholders(translated),
+                    "{language}: {name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn ukrainian_and_french_plural_forms() {
+        let t = &uk::TEXTS;
+        let tracks = |n| t.count(n, &t.track_count);
+        assert_eq!(tracks(1), "1 трек");
+        assert_eq!(tracks(3), "3 треки");
+        assert_eq!(tracks(5), "5 треків");
+        assert_eq!(tracks(21), "21 трек");
+
+        // Во французском 0 — тоже единственное число
+        let t = &fr::TEXTS;
+        assert_eq!(t.count(0, &t.track_count), "0 piste");
+        assert_eq!(t.count(1, &t.track_count), "1 piste");
+        assert_eq!(t.count(2, &t.track_count), "2 pistes");
+    }
+
+    #[test]
+    fn russian_plural_forms() {
+        let t = &ru::TEXTS;
+        let tracks = |n| t.count(n, &t.track_count);
+        assert_eq!(tracks(1), "1 трек");
+        assert_eq!(tracks(3), "3 трека");
+        assert_eq!(tracks(5), "5 треков");
+        assert_eq!(tracks(11), "11 треков");
+        assert_eq!(tracks(12), "12 треков");
+        assert_eq!(tracks(21), "21 трек");
+        assert_eq!(tracks(22), "22 трека");
+        assert_eq!(tracks(111), "111 треков");
+        assert_eq!(tracks(0), "0 треков");
+    }
+
+    #[test]
+    fn english_plural_forms_and_fill() {
+        let t = &en::TEXTS;
+        assert_eq!(t.count(1, &t.track_count), "1 track");
+        assert_eq!(t.count(2, &t.track_count), "2 tracks");
+        assert_eq!(
+            fill(t.adding_progress, &[("done", "3"), ("total", "10")]),
+            "Adding 3 of 10"
+        );
+    }
+}

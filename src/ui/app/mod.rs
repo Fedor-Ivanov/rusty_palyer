@@ -7,6 +7,7 @@ mod library_views;
 mod loading;
 mod now_playing;
 mod playlist_panel;
+mod settings_dialog;
 
 use eframe::egui::{self, Ui};
 use std::{
@@ -17,6 +18,7 @@ use std::{
 use self::loading::{Destination, PendingLoad};
 use super::{
     covers::CoverCache,
+    i18n,
     theme::WINDOW_TINT,
     widgets::{self, TileGridView, TrackListView},
 };
@@ -26,7 +28,8 @@ use crate::{
         groups::{AlbumGroup, ArtistGroup},
         loader::Source,
     },
-    playback::{PlayerController, PlayerState, PlaylistStore, Volume},
+    playback::{PlayerController, PlayerState, PlaylistStore},
+    settings::{Settings, SettingsStore},
 };
 
 // Кнопки-иконки в заголовке библиотеки и в нижнем блоке списка
@@ -38,8 +41,6 @@ const SIDEBAR_DEFAULT_WIDTH: f32 = 240.0;
 const TRACK_LIST_DEFAULT_WIDTH: f32 = 300.0;
 // Минимальная ширина центральной области (CentralPanel): её обеспечивают максимумы боковых панелей
 const CONTENT_MIN_WIDTH: f32 = 260.0;
-// Ключ громкости в хранилище настроек eframe
-const VOLUME_STORAGE_KEY: &str = "volume";
 // Зазор над плашкой текущего трека
 const NOW_PLAYING_BAR_GAP: f32 = 8.0;
 
@@ -59,6 +60,12 @@ pub struct PlayerApp {
     playlist_store: PlaylistStore,
     /// Ревизия плейлиста, которая уже сохранена на диск
     saved_playlist_revision: u64,
+    /// Настройки и их файл. Громкость живёт в контроллере, в настройки она копируется
+    /// перед сохранением — см. `save_settings_if_changed`
+    settings: Settings,
+    settings_store: SettingsStore,
+    /// Открыто ли окно настроек
+    settings_open: bool,
     library_view: TrackListView,
     playlist_view: TrackListView,
     /// Какой список получает клавиши (⌘A, Esc, Delete) — тот, с которым работали последним
@@ -103,12 +110,14 @@ enum CentralView {
 }
 
 impl CentralView {
+    /// Название на языке интерфейса
     fn title(self) -> &'static str {
+        let t = i18n::t();
         match self {
-            Self::NowPlaying => "Now Playing",
-            Self::Artists => "Artists",
-            Self::Albums => "Albums",
-            Self::Songs => "Songs",
+            Self::NowPlaying => t.now_playing,
+            Self::Artists => t.artists,
+            Self::Albums => t.albums,
+            Self::Songs => t.songs,
         }
     }
 }
@@ -122,11 +131,14 @@ enum ListFocus {
 }
 
 impl PlayerApp {
-    /// Из `cc` берутся настройки, сохранённые eframe с прошлого запуска (громкость),
-    /// и контекст egui — чтобы аудиопоток мог разбудить приложение
+    /// Из `cc` берётся контекст egui — чтобы аудиопоток мог разбудить приложение
     pub fn new(cc: &eframe::CreationContext) -> Self {
         let data_dir = eframe::storage_dir(crate::APP_NAME);
         let (library, mut error) = Library::load(data_dir.clone());
+        let (settings_store, settings, settings_error) = SettingsStore::load(data_dir.clone());
+        if let Some(e) = settings_error {
+            error.get_or_insert(e);
+        }
         let playlist_store = PlaylistStore::new(data_dir);
         let saved_playlist = playlist_store.load().unwrap_or_else(|e| {
             error.get_or_insert(e);
@@ -146,6 +158,9 @@ impl PlayerApp {
             library,
             playlist_store,
             saved_playlist_revision: 0,
+            settings,
+            settings_store,
+            settings_open: false,
             library_view: TrackListView::new("library"),
             playlist_view: TrackListView::new("playlist"),
             focus: ListFocus::Playlist,
@@ -166,12 +181,8 @@ impl PlayerApp {
         }
         // Восстановленный плейлист и так лежит на диске
         app.saved_playlist_revision = app.controller.playlist_revision();
-        if let Some(volume) = cc
-            .storage
-            .and_then(|storage| eframe::get_value::<Volume>(storage, VOLUME_STORAGE_KEY))
-        {
-            app.controller.set_volume(volume);
-        }
+        app.controller.set_volume(app.settings.volume());
+        i18n::set_language(app.settings.language());
         // Библиотека сохранена старым форматом — один раз перечитываем её теги в фоне
         if let Some(paths) = outdated {
             app.start_loading(Source::Files(paths), Destination::LibraryRefresh);
@@ -210,6 +221,18 @@ impl PlayerApp {
         self.set_result(result);
     }
 
+    /// Сохраняет настройки, если они изменились. Вызывается там же, где
+    /// `save_playlist_if_changed`. Пока зажата кнопка мыши, жест не закончен (например,
+    /// тянут ползунок громкости) — файл пишется один раз, когда кнопку отпустят
+    fn save_settings_if_changed(&mut self, ctx: &egui::Context) {
+        self.settings.update_volume(self.controller.volume());
+        if ctx.input(|input| input.pointer.any_down()) {
+            return;
+        }
+        let result = self.settings_store.save_if_changed(&self.settings);
+        self.set_result(result);
+    }
+
     /// Запоминает ошибку для плашки. Успех её не сбрасывает: плашка закрывается только
     /// кнопкой «OK», иначе ошибка исчезала бы сама при следующем удачном действии
     fn set_result(&mut self, result: Result<(), String>) {
@@ -225,13 +248,6 @@ impl eframe::App for PlayerApp {
         [0.0; 4]
     }
 
-    /// eframe вызывает при выходе и периодически во время работы. Громкость меняется
-    /// часто (ползунок тянут) — её достаточно сохранять так. Плейлист сохраняется сам
-    /// после каждого изменения — см. `save_playlist_if_changed`
-    fn save(&mut self, storage: &mut dyn eframe::Storage) {
-        eframe::set_value(storage, VOLUME_STORAGE_KEY, &self.controller.volume());
-    }
-
     /// Всё, что должно работать и без интерфейса: eframe вызывает это перед каждым `ui`,
     /// а когда окно скрыто (другой рабочий стол, свёрнуто, закрыто другими окнами) и `ui`
     /// не вызывается совсем — по `request_repaint`. Так следующий трек включается, даже
@@ -243,8 +259,11 @@ impl eframe::App for PlayerApp {
         {
             self.error = Some(e);
         }
+        // Язык интерфейса — из настроек; сменили настройку — со следующего кадра новый язык
+        i18n::set_language(self.settings.language());
         self.poll_loaders(ctx);
         self.save_playlist_if_changed();
+        self.save_settings_if_changed(ctx);
     }
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
@@ -288,6 +307,13 @@ impl eframe::App for PlayerApp {
             .show_separator_line(false)
             .show(ui, |ui| {
                 self.render_library(ui);
+                egui::Panel::bottom("library_sidebar_bottom")
+                    .frame(egui::Frame::new().inner_margin(16.0))
+                    .resizable(false)
+                    .show_separator_line(false)
+                    .show(ui, |ui| {
+                        self.render_settings_button(ui);
+                    });
             });
 
         // Считается после боковой панели: available_width уже без её ширины
@@ -384,6 +410,7 @@ impl eframe::App for PlayerApp {
             });
 
         self.render_removal_dialog(ui.ctx());
+        self.render_settings_dialog(ui.ctx());
 
         // Плашки поверх всего окна, по центру сверху: прогресс добавления (только когда
         // poll_loaders решил его показать) и под ним ошибка — пока не нажмут «OK»
@@ -391,8 +418,11 @@ impl eframe::App for PlayerApp {
         if self.loader_shown_at.is_some()
             && let Some(pending) = self.loaders.front()
         {
-            let (cancel, bottom) =
-                widgets::loading_banner(ui.ctx(), pending.action(), pending.loader.progress());
+            let (cancel, bottom) = widgets::loading_banner(
+                ui.ctx(),
+                pending.progress_template(),
+                pending.loader.progress(),
+            );
             banner_top = bottom - ui.ctx().content_rect().top() + widgets::BANNER_GAP;
             if cancel {
                 self.cancel_loading();
@@ -411,5 +441,6 @@ impl eframe::App for PlayerApp {
         widgets::paint_resize_line(ui, track_list_rect.left(), track_list_rect.y_range());
 
         self.save_playlist_if_changed();
+        self.save_settings_if_changed(ui.ctx());
     }
 }

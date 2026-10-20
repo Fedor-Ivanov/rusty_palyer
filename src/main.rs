@@ -4,6 +4,7 @@
 
 mod library;
 mod playback;
+mod settings;
 mod ui;
 
 use eframe::egui;
@@ -15,9 +16,9 @@ fn main() -> eframe::Result {
     // Иконка вшивается в бинарник при сборке, отдельный файл рядом не нужен.
     // На macOS — сквиркл по шаблону Apple, иначе — пластинка на прозрачном фоне
     #[cfg(target_os = "macos")]
-    const ICON_PNG: &[u8] = include_bytes!("../assets/icon_macos.png");
+    const ICON_PNG: &[u8] = include_bytes!("../assets/images/icon_macos.png");
     #[cfg(not(target_os = "macos"))]
-    const ICON_PNG: &[u8] = include_bytes!("../assets/icon_windows.png");
+    const ICON_PNG: &[u8] = include_bytes!("../assets/images/icon_windows.png");
     let icon = eframe::icon_data::from_png_bytes(ICON_PNG).expect("app icon is not a valid PNG");
 
     let options = eframe::NativeOptions {

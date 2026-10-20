@@ -3,6 +3,7 @@
 mod app;
 mod covers;
 mod format;
+mod i18n;
 mod icons;
 mod theme;
 mod widgets;

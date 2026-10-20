@@ -309,21 +309,24 @@ pub fn paint_overlay_play(ui: &Ui, rect: Rect, visibility: f32, hover: f32) {
     );
 }
 
-/// Лупа в поле поиска: кружок и ручка вниз вправо. Тонкие линии — иконка рядом с текстом
+/// Лупа в поле поиска: кружок и ручка вниз вправо — ручка длинная и чуть толще кружка,
+/// со скруглённым концом. Тонкие линии — иконка рядом с текстом
 pub fn paint_search(ui: &Ui, rect: Rect, color: Color32) {
-    let stroke = Stroke::new(1.4, color);
-    let radius = rect.width() * 0.3;
-    let center = rect.center() - vec2(rect.width() * 0.08, rect.height() * 0.08);
+    const RING_STROKE: f32 = 1.4;
+    const HANDLE_STROKE: f32 = 1.8;
+    let radius = rect.width() * 0.27;
+    // Кружок сдвинут вверх влево, чтобы ручка поместилась в квадрат иконки
+    let center = rect.center() - vec2(rect.width() * 0.13, rect.height() * 0.13);
     let painter = ui.painter();
-    painter.circle_stroke(center, radius, stroke);
+    painter.circle_stroke(center, radius, Stroke::new(RING_STROKE, color));
+
     let direction = vec2(1.0, 1.0).normalized();
+    let handle_end = center + direction * rect.width() * 0.68;
     painter.line_segment(
-        [
-            center + direction * radius,
-            center + direction * rect.width() * 0.48,
-        ],
-        stroke,
+        [center + direction * radius, handle_end],
+        Stroke::new(HANDLE_STROKE, color),
     );
+    painter.circle_filled(handle_end, HANDLE_STROKE / 2.0, color);
 }
 
 /// Кнопка очистки поля поиска: крестик в круге, круг светлеет при наведении

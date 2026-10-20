@@ -9,6 +9,7 @@ use crate::{
     library::Track,
     ui::{
         format::format_secs,
+        i18n::t,
         theme::{
             HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, MARQUEE_FILL, MARQUEE_STROKE,
             SELECTION_STROKE_WIDTH, TEXT, TEXT_FAINT, TEXT_MUTED, TRACK_ACTIVE_FADE_SECS,
@@ -251,7 +252,7 @@ fn track_row(
     // Обычный курсор, а не «рука»: клик выделяет, а не запускает трек — запуск двойным кликом
     let mut row = ui.interact(row_rect, row_id, Sense::click());
     if state.missing {
-        row = row.on_hover_text("File not found: it was moved or deleted");
+        row = row.on_hover_text(t().file_missing);
     }
 
     // Активность, выделение и наведение меняются плавно: фон и цвет текста перетекают

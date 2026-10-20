@@ -25,6 +25,23 @@ pub fn block_title(ui: &mut Ui, text: &str, align: Align, color: Color32) -> Rec
     row
 }
 
+/// Заголовок-кнопка: выглядит в точности как `block_title` слева («Library», «Playlist»),
+/// но по нему можно кликнуть — курсор над текстом становится рукой
+pub fn title_button(ui: &mut Ui, text: &str) -> Response {
+    let row = title_row(ui);
+    let galley = title_galley(ui, text, TEXT, row.width());
+    let rect = Rect::from_min_size(row.min, vec2(galley.size().x, row.height()));
+    let response = ui
+        .interact(
+            rect,
+            ui.scope_id().with(("title_button", text)),
+            Sense::click(),
+        )
+        .on_hover_cursor(CursorIcon::PointingHand);
+    paint_in_row(ui, row, row.left(), galley, TEXT);
+    response
+}
+
 /// Заголовок блока слева и рядом с ним `note` — мелким приглушённым текстом на той же линии
 /// (например, сколько треков в списке). Строка та же, что у `block_title`
 pub fn block_title_with_note(ui: &mut Ui, text: &str, note: &str) -> Rect {

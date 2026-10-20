@@ -8,7 +8,7 @@ use crate::{
     library::Track,
     playback::RepeatMode,
     ui::{
-        format::plural,
+        i18n::{fill, t},
         icons::{paint_repeat, paint_shuffle},
         theme::{TEXT, TEXT_FAINT},
         widgets,
@@ -27,10 +27,10 @@ impl PlayerApp {
             // там и так «No tracks»
             let count = self.controller.player().track_list.tracks.len();
             let row = if count == 0 {
-                widgets::block_title(ui, "Playlist", Align::LEFT, TEXT)
+                widgets::block_title(ui, t().playlist, Align::LEFT, TEXT)
             } else {
-                let note = format!("· {}", plural(count, "track", "tracks"));
-                widgets::block_title_with_note(ui, "Playlist", &note)
+                let note = format!("· {}", t().count(count, &t().track_count));
+                widgets::block_title_with_note(ui, t().playlist, &note)
             };
             self.render_add_button(ui, row, Destination::Playlist);
         });
@@ -40,7 +40,7 @@ impl PlayerApp {
                 ui.painter().text(
                     panel_rect.center(),
                     Align2::CENTER_CENTER,
-                    "No tracks",
+                    t().no_tracks,
                     FontId::proportional(14.0),
                     TEXT_FAINT,
                 );
@@ -62,8 +62,11 @@ impl PlayerApp {
             self.focus == ListFocus::Playlist,
             |ui, selected| {
                 let label = match selected {
-                    0 | 1 => "Remove from playlist".to_owned(),
-                    count => format!("Remove {count} tracks from playlist"),
+                    0 | 1 => t().remove_from_playlist.to_owned(),
+                    count => fill(
+                        t().remove_items_from_playlist,
+                        &[("items", &t().count(count, &t().track_count))],
+                    ),
                 };
                 if widgets::menu_item(ui, &label).clicked() {
                     remove = true;
@@ -114,7 +117,7 @@ impl PlayerApp {
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
             let (clicked, active, hover) =
-                widgets::toggle_button(ui, rect, "shuffle", shuffle, "Shuffle");
+                widgets::toggle_button(ui, rect, "shuffle", shuffle, t().shuffle);
             paint_shuffle(ui, rect, active, hover);
             if clicked {
                 self.controller.toggle_shuffle();
@@ -126,8 +129,8 @@ impl PlayerApp {
                 ui.spacing_mut().item_spacing.x = ICON_BUTTON_GAP;
                 // В right_to_left первой добавляется самая правая кнопка
                 for (mode, id_salt, tooltip) in [
-                    (RepeatMode::All, "repeat_all", "Repeat all"),
-                    (RepeatMode::One, "repeat_one", "Repeat one"),
+                    (RepeatMode::All, "repeat_all", t().repeat_all),
+                    (RepeatMode::One, "repeat_one", t().repeat_one),
                 ] {
                     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
                     let (clicked, active, hover) =

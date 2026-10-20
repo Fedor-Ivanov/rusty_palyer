@@ -4,12 +4,12 @@
 use eframe::egui::{self, Align, Ui};
 
 use super::{CentralView, PlayerApp, loading::Destination};
-use crate::ui::{theme::TEXT, widgets};
+use crate::ui::{i18n::t, theme::TEXT, widgets};
 
 impl PlayerApp {
     pub(super) fn render_library(&mut self, ui: &mut Ui) {
         egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
-            let row = widgets::block_title(ui, "Library", Align::LEFT, TEXT);
+            let row = widgets::block_title(ui, t().library, Align::LEFT, TEXT);
             self.render_add_button(ui, row, Destination::Library);
 
             ui.add_space(8.0);

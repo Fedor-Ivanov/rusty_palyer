@@ -12,7 +12,7 @@ use crate::{
     },
     ui::{
         covers::CoverSize,
-        format::plural,
+        i18n::{fill, t},
         icons::paint_overlay_play,
         theme::{HIGHLIGHT, HIGHLIGHT_STRONG, TEXT, TEXT_FAINT, TEXT_MUTED},
         widgets::{self, ButtonStyle, TileLine},
@@ -174,13 +174,19 @@ impl PlayerApp {
         let note = (view == CentralView::Songs).then(|| {
             self.refresh_found_songs();
             let total = self.library.tracks().len();
+            let tracks = t().count(total, &t().track_count);
             match &self.search.found_songs {
                 Some(found) => format!(
-                    "· {} of {}",
-                    found.indices.len(),
-                    plural(total, "track", "tracks")
+                    "· {}",
+                    fill(
+                        t().found_of,
+                        &[
+                            ("found", &found.indices.len().to_string()),
+                            ("tracks", &tracks)
+                        ]
+                    )
                 ),
-                None => format!("· {}", plural(total, "track", "tracks")),
+                None => format!("· {tracks}"),
             }
         });
         let query = &mut self.search.query;
@@ -257,7 +263,7 @@ impl PlayerApp {
         self.refresh_groups();
         let artists = &self.groups.artists;
         if artists.is_empty() {
-            placeholder(ui, "Library is empty");
+            placeholder(ui, t().library_empty);
             return;
         }
         // Показанные исполнители — номера в `groups.artists`: поиск по имени
@@ -266,7 +272,7 @@ impl PlayerApp {
             .filter(|&index| contains_query(&artists[index].name, &query))
             .collect();
         if shown.is_empty() {
-            placeholder(ui, "No results");
+            placeholder(ui, t().no_results);
             return;
         }
         // Имя — по центру под круглой картинкой. Сетка заимствует исполнителей —
@@ -344,8 +350,8 @@ impl PlayerApp {
                     Label::new(
                         RichText::new(format!(
                             "{} · {}",
-                            plural(album_count, "album", "albums"),
-                            plural(tracks.len(), "song", "songs"),
+                            t().count(album_count, &t().album_count),
+                            t().count(tracks.len(), &t().song_count),
                         ))
                         .size(13.0)
                         .color(TEXT_MUTED),
@@ -359,9 +365,9 @@ impl PlayerApp {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 8.0;
                         play_all =
-                            widgets::pill_button(ui, "Play all", ButtonStyle::Primary).clicked();
+                            widgets::pill_button(ui, t().play_all, ButtonStyle::Primary).clicked();
                         add_to_playlist =
-                            widgets::pill_button(ui, "Add to playlist", ButtonStyle::Secondary)
+                            widgets::pill_button(ui, t().add_to_playlist, ButtonStyle::Secondary)
                                 .clicked();
                     });
                 });
@@ -421,6 +427,7 @@ impl PlayerApp {
         // ---- шапка
         let mut play_all = false;
         let mut add_all = false;
+        let mut open_artist = false;
         egui::Frame::new()
             .inner_margin(egui::Margin {
                 left: 16,
@@ -444,12 +451,9 @@ impl PlayerApp {
                                 .selectable(false)
                                 .truncate(),
                         );
-                        ui.add(
-                            Label::new(RichText::new(&artist).size(16.0).color(TEXT_MUTED))
-                                .selectable(false)
-                                .truncate(),
-                        );
-                        let tracks = plural(indices.len(), "track", "tracks");
+                        // Имя исполнителя — ссылка на его профиль
+                        open_artist = widgets::text_link(ui, &artist, 16.0, TEXT_MUTED).clicked();
+                        let tracks = t().count(indices.len(), &t().track_count);
                         let details = match year {
                             Some(year) => format!("{year} · {tracks}"),
                             None => tracks,
@@ -461,11 +465,14 @@ impl PlayerApp {
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 8.0;
-                            play_all = widgets::pill_button(ui, "Play all", ButtonStyle::Primary)
+                            play_all = widgets::pill_button(ui, t().play_all, ButtonStyle::Primary)
                                 .clicked();
-                            add_all =
-                                widgets::pill_button(ui, "Add to playlist", ButtonStyle::Secondary)
-                                    .clicked();
+                            add_all = widgets::pill_button(
+                                ui,
+                                t().add_to_playlist,
+                                ButtonStyle::Secondary,
+                            )
+                            .clicked();
                         });
                     });
                 });
@@ -495,16 +502,7 @@ impl PlayerApp {
             },
             self.focus == ListFocus::Library,
             |ui, selected| {
-                let (add_label, remove_label) = match selected {
-                    0 | 1 => (
-                        "Add to playlist".to_owned(),
-                        "Remove from library".to_owned(),
-                    ),
-                    count => (
-                        format!("Add {count} tracks to playlist"),
-                        format!("Remove {count} tracks from library"),
-                    ),
-                };
+                let (add_label, remove_label) = track_menu_labels(selected);
                 if widgets::menu_item(ui, &add_label).clicked() {
                     add_selected = true;
                 }
@@ -525,7 +523,13 @@ impl PlayerApp {
             .filter_map(|&index| indices.get(index).copied())
             .collect();
 
-        if play_all {
+        if open_artist {
+            // Как из «Now Playing»: профиль исполнителя в Artists, крошки
+            // «Artists › Исполнитель» ведут оттуда дальше
+            self.set_view(CentralView::Artists);
+            self.selected_artist = Some(artist);
+            self.selected_album = None;
+        } else if play_all {
             self.playlist_view.clear_selection();
             let result = self.controller.play_all(self.playable_tracks(&indices));
             self.set_result(result);
@@ -573,11 +577,11 @@ impl PlayerApp {
         let covers = &mut self.covers;
         if albums.is_empty() {
             let text = if artist.is_some() {
-                "No albums"
+                t().no_albums
             } else if self.groups.albums.is_empty() {
-                "Library is empty"
+                t().library_empty
             } else {
-                "No results"
+                t().no_results
             };
             placeholder(ui, text);
             return;
@@ -735,7 +739,7 @@ impl PlayerApp {
     /// в плейлист и запускает его; из меню — добавить в плейлист или убрать из библиотеки
     fn render_songs(&mut self, ui: &mut Ui) {
         if self.library.tracks().is_empty() {
-            placeholder(ui, "Library is empty");
+            placeholder(ui, t().library_empty);
             return;
         }
         self.refresh_found_songs();
@@ -745,7 +749,7 @@ impl PlayerApp {
             .as_ref()
             .is_some_and(|found| found.indices.is_empty())
         {
-            placeholder(ui, "No results");
+            placeholder(ui, t().no_results);
             return;
         }
 
@@ -759,7 +763,7 @@ impl PlayerApp {
                 bottom: 16,
             })
             .show(ui, |ui| {
-                play_all = widgets::pill_button(ui, "Play all", ButtonStyle::Primary).clicked();
+                play_all = widgets::pill_button(ui, t().play_all, ButtonStyle::Primary).clicked();
             });
         if play_all {
             let shown = self.shown_song_indices();
@@ -784,16 +788,7 @@ impl PlayerApp {
             },
             self.focus == ListFocus::Library,
             |ui, selected| {
-                let (add_label, remove_label) = match selected {
-                    0 | 1 => (
-                        "Add to playlist".to_owned(),
-                        "Remove from library".to_owned(),
-                    ),
-                    count => (
-                        format!("Add {count} tracks to playlist"),
-                        format!("Remove {count} tracks from library"),
-                    ),
-                };
+                let (add_label, remove_label) = track_menu_labels(selected);
                 if widgets::menu_item(ui, &add_label).clicked() {
                     add_to_playlist = true;
                 }
@@ -943,52 +938,52 @@ impl PlayerApp {
         let Some(removal) = &self.pending_removal else {
             return;
         };
-        const FILES_STAY: &str = "The files will stay on your disk.";
-        let tracks = plural(removal.paths.len(), "track", "tracks");
+        let t = t();
+        let count = |word| t.count(removal.names.len(), word);
+        let tracks = t.count(removal.paths.len(), &t.track_count);
         let (title, message) = match (removal.kind, removal.names.as_slice()) {
             (GroupKind::Album, [album]) => (
-                "Remove album from library?".to_owned(),
-                format!("\u{201C}{album}\u{201D} will be removed from your library. {FILES_STAY}"),
+                t.remove_album_title.to_owned(),
+                fill(t.remove_album_message, &[("album", album)]),
             ),
-            (GroupKind::Album, albums) => (
-                format!("Remove {} albums from library?", albums.len()),
-                format!(
-                    "{} albums ({tracks}) will be removed from your library. {FILES_STAY}",
-                    albums.len()
-                ),
-            ),
+            (GroupKind::Album, _) => {
+                let albums = count(&t.album_count);
+                (
+                    fill(t.remove_albums_title, &[("albums", &albums)]),
+                    fill(
+                        t.remove_albums_message,
+                        &[("albums", &albums), ("tracks", &tracks)],
+                    ),
+                )
+            }
             (GroupKind::Artist, [artist]) => (
-                "Remove artist from library?".to_owned(),
-                format!(
-                    "All tracks by \u{201C}{artist}\u{201D} will be removed from your \
-                     library. {FILES_STAY}"
-                ),
+                t.remove_artist_title.to_owned(),
+                fill(t.remove_artist_message, &[("artist", artist)]),
             ),
-            (GroupKind::Artist, artists) => (
-                format!("Remove {} artists from library?", artists.len()),
-                format!(
-                    "All tracks by {} artists ({tracks}) will be removed from your \
-                     library. {FILES_STAY}",
-                    artists.len()
-                ),
-            ),
+            (GroupKind::Artist, _) => {
+                let artists = count(&t.artist_count);
+                (
+                    fill(t.remove_artists_title, &[("artists", &artists)]),
+                    fill(
+                        t.remove_artists_message,
+                        &[("artists", &artists), ("tracks", &tracks)],
+                    ),
+                )
+            }
             (GroupKind::Songs, [song]) => (
-                "Remove song from library?".to_owned(),
-                format!(
-                    "\u{201C}{song}\u{201D} will be removed from your library. \
-                     The file will stay on your disk."
-                ),
+                t.remove_song_title.to_owned(),
+                fill(t.remove_song_message, &[("song", song)]),
             ),
-            (GroupKind::Songs, songs) => (
-                format!("Remove {} songs from library?", songs.len()),
-                format!(
-                    "{} songs will be removed from your library. {FILES_STAY}",
-                    songs.len()
-                ),
-            ),
+            (GroupKind::Songs, _) => {
+                let songs = count(&t.song_count);
+                (
+                    fill(t.remove_songs_title, &[("songs", &songs)]),
+                    fill(t.remove_songs_message, &[("songs", &songs)]),
+                )
+            }
         };
         let answer =
-            widgets::confirm_dialog(ctx, "remove_from_library", &title, &message, "Remove");
+            widgets::confirm_dialog(ctx, "remove_from_library", &title, &message, t.remove);
         match answer {
             widgets::Confirm::Pending => {}
             widgets::Confirm::Cancelled => self.pending_removal = None,
@@ -1020,26 +1015,29 @@ fn group_context_menu(tile: &widgets::Tile, kind: GroupKind) -> Option<GroupActi
     let mut action = None;
     tile.response.context_menu(|ui| {
         widgets::menu_style(ui);
+        let t = t();
         let items = match (tile.selected, kind) {
             (1, _) => [
-                ("Play".to_owned(), GroupAction::Play),
-                ("Add to playlist".to_owned(), GroupAction::AddToPlaylist),
-                ("Remove from library".to_owned(), GroupAction::Remove),
+                (t.play.to_owned(), GroupAction::Play),
+                (t.add_to_playlist.to_owned(), GroupAction::AddToPlaylist),
+                (t.remove_from_library.to_owned(), GroupAction::Remove),
             ],
             (count, kind) => {
-                let what = match kind {
-                    GroupKind::Album => "albums",
-                    GroupKind::Artist => "artists",
-                    GroupKind::Songs => "tracks",
+                let word = match kind {
+                    GroupKind::Album => &t.album_count,
+                    GroupKind::Artist => &t.artist_count,
+                    GroupKind::Songs => &t.track_count,
                 };
+                let items = t.count(count, word);
+                let items = [("items", items.as_str())];
                 [
-                    (format!("Play {count} {what}"), GroupAction::Play),
+                    (fill(t.play_items, &items), GroupAction::Play),
                     (
-                        format!("Add {count} {what} to playlist"),
+                        fill(t.add_items_to_playlist, &items),
                         GroupAction::AddToPlaylist,
                     ),
                     (
-                        format!("Remove {count} {what} from library"),
+                        fill(t.remove_items_from_library, &items),
                         GroupAction::Remove,
                     ),
                 ]
@@ -1052,4 +1050,24 @@ fn group_context_menu(tile: &widgets::Tile, kind: GroupKind) -> Option<GroupActi
         }
     });
     action
+}
+
+/// Подписи меню списка треков медиатеки: добавить в плейлист и удалить из медиатеки.
+/// Для нескольких выделенных — с их числом
+fn track_menu_labels(selected: usize) -> (String, String) {
+    let t = t();
+    match selected {
+        0 | 1 => (
+            t.add_to_playlist.to_owned(),
+            t.remove_from_library.to_owned(),
+        ),
+        count => {
+            let items = t.count(count, &t.track_count);
+            let items = [("items", items.as_str())];
+            (
+                fill(t.add_items_to_playlist, &items),
+                fill(t.remove_items_from_library, &items),
+            )
+        }
+    }
 }

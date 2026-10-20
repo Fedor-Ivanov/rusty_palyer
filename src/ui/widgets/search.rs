@@ -7,6 +7,7 @@ use eframe::egui::{
 
 use super::buttons::{HitShape, icon_button};
 use crate::ui::{
+    i18n::t,
     icons::{paint_clear, paint_search},
     theme::{HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, TEXT, TEXT_FAINT, TEXT_MUTED},
 };
@@ -55,7 +56,7 @@ pub fn title_with_search(
     search_field(ui, field, id_salt, query)
 }
 
-/// Поле поиска в `rect`: лупа слева, подсказка «Search», крестик очистки справа, пока
+/// Поле поиска в `rect`: лупа слева, подсказка «Search» (на языке интерфейса), крестик очистки справа, пока
 /// запрос не пуст. Esc очищает запрос. Возвращает `true`, если запрос изменился
 fn search_field(ui: &mut Ui, rect: Rect, id_salt: &str, query: &mut String) -> bool {
     let text_id = Id::unique(("search", id_salt));
@@ -122,7 +123,7 @@ fn search_field(ui: &mut Ui, rect: Rect, id_salt: &str, query: &mut String) -> b
             .margin(Margin::ZERO)
             .font(FontId::proportional(SEARCH_TEXT_SIZE))
             .text_color(TEXT)
-            .hint_text(RichText::new("Search").color(TEXT_FAINT))
+            .hint_text(RichText::new(t().search).color(TEXT_FAINT))
             .align(Align2::LEFT_CENTER),
     );
     let mut changed = response.changed();

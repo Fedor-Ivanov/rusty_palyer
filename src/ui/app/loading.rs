@@ -13,7 +13,11 @@ use crate::{
         loader::{Finished, Loader, Source},
         scan::SUPPORTED_EXTENSIONS,
     },
-    ui::{icons::paint_add, widgets},
+    ui::{
+        i18n::{fill, t},
+        icons::paint_add,
+        widgets,
+    },
 };
 
 // Фоновое добавление: как часто проверять готовность, через сколько показывать прогресс
@@ -40,11 +44,11 @@ pub(super) struct PendingLoad {
 }
 
 impl PendingLoad {
-    /// Что делаем — для плашки прогресса
-    pub(super) fn action(&self) -> &'static str {
+    /// Текст плашки прогресса с `{done}` и `{total}` — зависит от того, что делаем
+    pub(super) fn progress_template(&self) -> &'static str {
         match self.destination {
-            Destination::Library | Destination::Playlist => "Adding",
-            Destination::LibraryRefresh => "Updating library",
+            Destination::Library | Destination::Playlist => t().adding_progress,
+            Destination::LibraryRefresh => t().updating_library_progress,
         }
     }
 }
@@ -72,10 +76,10 @@ impl PlayerApp {
             .gap(4.0)
             .show(|ui| {
                 widgets::menu_style(ui);
-                if widgets::menu_item(ui, "Add files").clicked() {
+                if widgets::menu_item(ui, t().add_files).clicked() {
                     self.add_files(destination);
                 }
-                if widgets::menu_item(ui, "Add folder").clicked() {
+                if widgets::menu_item(ui, t().add_folder).clicked() {
                     self.add_folder(destination);
                 }
             });
@@ -84,7 +88,7 @@ impl PlayerApp {
     /// Выбор отдельных файлов
     pub(super) fn add_files(&mut self, destination: Destination) {
         let Some(paths) = rfd::FileDialog::new()
-            .add_filter("Audio", SUPPORTED_EXTENSIONS)
+            .add_filter(t().audio_files, SUPPORTED_EXTENSIONS)
             .pick_files()
         else {
             // Пользователь закрыл диалог: оставляем текущий трек
@@ -170,7 +174,7 @@ impl PlayerApp {
 
         // Всё найденное уже было в библиотеке — это не ошибка, просто нечего добавлять
         if finished.total == Some(0) && finished.skipped == 0 {
-            self.error = Some("No supported audio files found".into());
+            self.error = Some(t().no_audio_found.into());
         } else if !finished.errors.is_empty() {
             self.error = Some(summarize_errors(&finished.errors));
         }
@@ -189,10 +193,9 @@ fn summarize_errors(errors: &[String]) -> String {
     const SHOWN: usize = 3;
     let mut text = errors[..errors.len().min(SHOWN)].join("\n");
     if errors.len() > SHOWN {
-        text += &format!(
-            "\n…and {} more files could not be added",
-            errors.len() - SHOWN
-        );
+        let more = t().count(errors.len() - SHOWN, &t().more_file_count);
+        text += "\n";
+        text += &fill(t().more_files_failed, &[("more", &more)]);
     }
     text
 }

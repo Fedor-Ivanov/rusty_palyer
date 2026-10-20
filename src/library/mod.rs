@@ -7,7 +7,7 @@ pub mod loader;
 pub mod metadata;
 pub mod scan;
 mod store;
-mod track;
+pub mod track;
 
 pub use store::{Library, write_atomically};
 pub use track::Track;

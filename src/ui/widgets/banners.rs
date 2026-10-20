@@ -4,7 +4,10 @@ use eframe::egui::{
     self, Align, CornerRadius, CursorIcon, Label, Layout, Rect, RichText, Sense, Stroke, vec2,
 };
 
-use crate::ui::theme::{BANNER_BORDER, BANNER_FILL, RED, SLIDER_TRACK, TEXT, TEXT_MUTED};
+use crate::ui::{
+    i18n::{fill, t},
+    theme::{BANNER_BORDER, BANNER_FILL, RED, SLIDER_TRACK, TEXT, TEXT_MUTED},
+};
 
 const ERROR_BANNER_MAX_WIDTH: f32 = 440.0;
 const ERROR_BANNER_BUTTON_WIDTH: f32 = 48.0;
@@ -36,7 +39,7 @@ pub fn error_banner(ctx: &egui::Context, message: &str, top: f32) -> bool {
 
                     // «OK» под текстом, у правого края. Ширина строки — по тексту, а не
                     // по максимуму плашки: короткая ошибка даёт узкую плашку
-                    let ok = egui::Button::new(RichText::new("OK").color(TEXT))
+                    let ok = egui::Button::new(RichText::new(t().ok).color(TEXT))
                         .corner_radius(8)
                         .min_size(vec2(ERROR_BANNER_BUTTON_WIDTH, 0.0));
                     let width = ui.min_rect().width().max(ERROR_BANNER_BUTTON_WIDTH);
@@ -63,10 +66,10 @@ pub fn error_banner(ctx: &egui::Context, message: &str, top: f32) -> bool {
 /// ошибки. `progress` — сколько обработано и сколько всего; `None`, пока идёт обход папки
 /// и общее число неизвестно. Возвращает, нажали ли «Cancel», и нижний край плашки —
 /// чтобы плашку ошибки поставить под ней, а не поверх.
-/// `action` — что делаем, в начале текста: «Adding», «Updating library».
+/// `template` — текст прогресса с `{done}` и `{total}`: «Adding {done} of {total}».
 pub fn loading_banner(
     ctx: &egui::Context,
-    action: &str,
+    template: &str,
     progress: Option<(usize, usize)>,
 ) -> (bool, f32) {
     let mut cancel = false;
@@ -84,10 +87,13 @@ pub fn loading_banner(
                     ui.set_width(LOADING_BANNER_WIDTH);
                     ui.horizontal(|ui| {
                         let text = match progress {
-                            Some((done, total)) => format!("{action} {done} of {total}"),
+                            Some((done, total)) => fill(
+                                template,
+                                &[("done", &done.to_string()), ("total", &total.to_string())],
+                            ),
                             None => {
                                 ui.add(egui::Spinner::new().size(12.0).color(TEXT_MUTED));
-                                "Scanning folder…".to_owned()
+                                t().scanning_folder.to_owned()
                             }
                         };
                         ui.add(
@@ -97,7 +103,7 @@ pub fn loading_banner(
 
                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                             let button = egui::Button::new(
-                                RichText::new("Cancel").size(13.0).color(TEXT_MUTED),
+                                RichText::new(t().cancel).size(13.0).color(TEXT_MUTED),
                             )
                             .frame(false);
                             cancel = ui
