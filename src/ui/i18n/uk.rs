@@ -29,6 +29,7 @@ pub static TEXTS: Texts = Texts {
 
     search: "Пошук",
     found_of: "{found} з {tracks}",
+    bitrate: "{kbps} кбіт/с",
 
     open_files: "Відкрити файли",
     add_files: "Додати файли",
@@ -41,6 +42,16 @@ pub static TEXTS: Texts = Texts {
     more_files_failed: "…і ще {more} не вдалося додати",
 
     show_artist: "Показати артиста",
+
+    lyrics: "Текст пісні",
+
+    no_lyrics: "Немає тексту пісні",
+
+    searching_lyrics: "Шукаємо текст пісні…",
+
+    lyrics_unavailable: "Не вдалося зв'язатися з LRCLIB, спробуємо пізніше",
+
+    instrumental: "Інструментал",
     show_album: "Показати альбом",
     show_current_track: "Показати поточний трек",
     file_missing: "Файл не знайдено: його переміщено або видалено",

@@ -38,6 +38,7 @@ pub static TEXTS: Texts = Texts {
 
     search: "Rechercher",
     found_of: "{found} sur {tracks}",
+    bitrate: "{kbps} kb/s",
 
     open_files: "Ouvrir des fichiers",
     add_files: "Ajouter des fichiers",
@@ -50,6 +51,16 @@ pub static TEXTS: Texts = Texts {
     more_files_failed: "…impossible d'ajouter {more}",
 
     show_artist: "Afficher l'artiste",
+
+    lyrics: "Paroles",
+
+    no_lyrics: "Pas de paroles",
+
+    searching_lyrics: "Recherche des paroles…",
+
+    lyrics_unavailable: "Impossible de joindre LRCLIB, nouvel essai plus tard",
+
+    instrumental: "Instrumental",
     show_album: "Afficher l'album",
     show_current_track: "Afficher la piste en cours",
     file_missing: "Fichier introuvable : il a été déplacé ou supprimé",

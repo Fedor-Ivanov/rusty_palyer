@@ -23,6 +23,11 @@ pub struct FileMetadata {
     pub year: Option<u16>,
     pub track_number: Option<u32>,
     pub disc_number: Option<u32>,
+    /// Жанр; пусто, если в тегах его нет. В медиатеке не хранится — нужен только деталям
+    /// текущего трека
+    pub genre: String,
+    /// Битрейт звука в кбит/с — без служебных данных файла; если его не посчитать — общий
+    pub bitrate_kbps: Option<u32>,
 }
 
 pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
@@ -64,6 +69,14 @@ pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
     // Номер трека и диска — для порядка треков в альбоме
     let track_number = tag.and_then(|t| t.track());
     let disc_number = tag.and_then(|t| t.disk());
+    let genre = tag
+        .and_then(|t| t.genre().map(|s| fix_cp1251(&s)))
+        .unwrap_or_default();
+    let properties = tagged.properties();
+    let bitrate_kbps = properties
+        .audio_bitrate()
+        .or_else(|| properties.overall_bitrate())
+        .filter(|&kbps| kbps > 0);
 
     Ok(FileMetadata {
         title,
@@ -74,6 +87,8 @@ pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
         year,
         track_number,
         disc_number,
+        genre,
+        bitrate_kbps,
     })
 }
 
@@ -132,7 +147,7 @@ pub fn read_folder_cover(dir: &Path) -> Option<Vec<u8>> {
 /// Чтобы не испортить настоящий латинский текст с диакритикой («Beyoncé», «Mötley Crüe»),
 /// перекодируем, только если большинство букв — из диапазона U+00C0..=U+00FF, где
 /// в Windows-1251 лежит кириллица.
-fn fix_cp1251(text: &str) -> String {
+pub(crate) fn fix_cp1251(text: &str) -> String {
     // Строка из Latin-1 состоит только из символов до U+00FF — иначе это уже не наш случай
     if text.chars().any(|c| c as u32 > 0xFF) {
         return text.to_owned();

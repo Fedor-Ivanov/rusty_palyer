@@ -37,6 +37,7 @@ pub static TEXTS: Texts = Texts {
 
     search: "Search",
     found_of: "{found} of {tracks}",
+    bitrate: "{kbps} kbps",
 
     open_files: "Open files",
     add_files: "Add files",
@@ -49,6 +50,16 @@ pub static TEXTS: Texts = Texts {
     more_files_failed: "…and {more} could not be added",
 
     show_artist: "Show artist",
+
+    lyrics: "Lyrics",
+
+    no_lyrics: "No lyrics",
+
+    searching_lyrics: "Searching for lyrics…",
+
+    lyrics_unavailable: "Couldn't reach LRCLIB, will try again later",
+
+    instrumental: "Instrumental",
     show_album: "Show album",
     show_current_track: "Show the current track",
     file_missing: "File not found: it was moved or deleted",

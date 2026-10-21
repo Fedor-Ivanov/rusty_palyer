@@ -145,6 +145,9 @@ pub(crate) enum Action {
     /// Оттенок и прозрачность стекла окна
     SetGlass(Glass),
 
+    /// Показать или спрятать текст песни на странице текущего трека
+    ToggleLyrics,
+
     // ---- навигация
     /// Открыть страницу (см. `navigation`)
     Navigate(Route),
@@ -362,6 +365,8 @@ impl PlayerApp {
             }
 
             Action::SetGlass(glass) => self.core.settings.update_glass(glass),
+
+            Action::ToggleLyrics => self.lyrics_open = !self.lyrics_open,
 
             Action::Navigate(route) => self.navigate(route),
         }

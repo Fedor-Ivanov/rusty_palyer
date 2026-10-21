@@ -5,6 +5,7 @@
 use eframe::egui::{self, Ui};
 use std::{
     collections::VecDeque,
+    path::PathBuf,
     time::{Duration, Instant},
 };
 
@@ -20,7 +21,13 @@ use super::{
     style::theme::window_tint,
     system_media::SystemMedia,
 };
-use crate::core::{Core, library::loader::Source, playback::PlayerState, playlists::PlaylistId};
+use crate::core::{
+    Core,
+    library::{loader::Source, metadata::FileMetadata},
+    lyrics::TrackLyrics,
+    playback::PlayerState,
+    playlists::PlaylistId,
+};
 
 // Кнопки-иконки в заголовке библиотеки и в нижнем блоке списка
 pub(crate) const ADD_BUTTON_SIZE: f32 = 24.0;
@@ -78,6 +85,17 @@ pub struct PlayerApp {
     /// Обложка и фон текущего трека: плавная смена при переключении трека
     pub(crate) cover_fade: CoverFade,
     pub(crate) backdrop_fade: CoverFade,
+    /// Теги текущего трека из файла — для деталей: жанр и битрейт в треке не хранятся.
+    /// Читаются один раз при смене трека; `None` внутри — файл не прочитался
+    pub(crate) current_details: Option<(PathBuf, Option<FileMetadata>)>,
+    /// Показан ли текст песни вместо обложки на странице текущего трека
+    pub(crate) lyrics_open: bool,
+    /// Текст песни текущего трека — ищется при смене трека, пока текст показан, и заново,
+    /// когда пришёл ответ LRCLIB
+    pub(crate) current_lyrics: Option<(PathBuf, TrackLyrics)>,
+    /// Строка, к которой текст прокручен последней: прокручиваем, только когда текущая
+    /// строка сменилась, — иначе текст нельзя было бы листать самому
+    pub(crate) lyrics_line: Option<usize>,
     /// Системные медиа-кнопки и показ текущего трека системе
     pub(crate) system_media: SystemMedia,
 }
@@ -132,6 +150,10 @@ impl PlayerApp {
             covers: CoverCache::new(),
             cover_fade: CoverFade::default(),
             backdrop_fade: CoverFade::default(),
+            current_details: None,
+            lyrics_open: false,
+            current_lyrics: None,
+            lyrics_line: None,
             system_media: SystemMedia::new(cc),
         };
         // Библиотека сохранена старым форматом — один раз перечитываем её теги в фоне
@@ -181,6 +203,10 @@ impl eframe::App for PlayerApp {
         }
         // Медиа-кнопки — тоже здесь: они работают, и когда окно не видно
         self.poll_system_media();
+        // Пришёл текст песни из LRCLIB — найдём текст текущего трека заново
+        if self.core.lyrics.poll() {
+            self.current_lyrics = None;
+        }
         self.poll_loaders(ctx);
         self.apply_actions(ctx);
         self.sync_system_media();

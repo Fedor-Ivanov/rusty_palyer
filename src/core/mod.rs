@@ -3,18 +3,20 @@
 //! (`crate::ui`) только читает отсюда данные и вызывает методы. Проверяется тестами без окна.
 
 pub mod library;
+pub mod lyrics;
 pub mod playback;
 pub mod playlists;
 pub mod settings;
 pub mod storage;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use self::{
     library::{
         Library, Track,
         groups::{self, AlbumGroup, ArtistGroup},
     },
+    lyrics::LyricsFinder,
     playback::{PlayerController, QueueStore},
     playlists::{PlaylistId, Playlists},
     settings::{Settings, SettingsStore},
@@ -35,6 +37,8 @@ pub struct Core {
     /// Исполнители и альбомы медиатеки — пересчитываются (`refresh_groups`), только когда
     /// медиатека изменилась
     pub groups: LibraryGroups,
+    /// Тексты песен: свои и из LRCLIB, с кешем ответов
+    pub lyrics: LyricsFinder,
     queue_store: QueueStore,
     /// Ревизия плейлиста, которая уже сохранена на диск
     saved_queue_revision: u64,
@@ -52,22 +56,27 @@ pub struct LibraryGroups {
 impl Core {
     /// Загружает сохранённое в папке данных `dir`: медиатеку, настройки и плейлист прошлого
     /// запуска. `None` — папка недоступна: всё живёт только до выхода. `wake` вызывается
-    /// из аудиопотока, когда трек доиграл (см. `PlayerController::new`).
+    /// из фоновых потоков: трек доиграл (см. `PlayerController::new`), пришёл текст песни.
     /// Вторым значением — первая из ошибок загрузки, для показа пользователю
-    pub fn load(dir: Option<PathBuf>, wake: impl Fn() + Send + 'static) -> (Self, Option<String>) {
+    pub fn load(
+        dir: Option<PathBuf>,
+        wake: impl Fn() + Send + Sync + 'static,
+    ) -> (Self, Option<String>) {
+        let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(wake);
         let (library, mut error) = Library::load(dir.clone());
         let (settings_store, settings, settings_error) = SettingsStore::load(dir.clone());
         let (playlists, playlists_error) = Playlists::load(dir.clone());
         for e in [settings_error, playlists_error].into_iter().flatten() {
             error.get_or_insert(e);
         }
+        let lyrics = LyricsFinder::new(dir.clone(), Arc::clone(&wake));
         let queue_store = QueueStore::new(dir);
         let saved_queue = queue_store.load().unwrap_or_else(|e| {
             error.get_or_insert(e);
             None
         });
 
-        let mut controller = PlayerController::new(wake);
+        let mut controller = PlayerController::new(move || wake());
         if let Some(list) = saved_queue {
             controller.restore_track_list(list);
         }
@@ -80,6 +89,7 @@ impl Core {
             controller,
             settings,
             groups: LibraryGroups::default(),
+            lyrics,
             queue_store,
             settings_store,
         };

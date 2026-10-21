@@ -96,6 +96,8 @@ pub struct Texts {
     pub search: &'static str,
     /// Сколько найдено в Songs: `{found}`, `{tracks}` — всего треков с числом
     pub found_of: &'static str,
+    /// Битрейт в деталях трека: «320 kbps»
+    pub bitrate: &'static str,
 
     // ---- добавление файлов
     pub open_files: &'static str,
@@ -113,6 +115,14 @@ pub struct Texts {
 
     // ---- переходы и подсказки
     pub show_artist: &'static str,
+    /// Кнопка текста песни и заглушка, когда текста нет
+    pub lyrics: &'static str,
+    pub no_lyrics: &'static str,
+    pub searching_lyrics: &'static str,
+    /// LRCLIB не ответил — текста пока нет
+    pub lyrics_unavailable: &'static str,
+    /// Трек без слов — так о нём говорит LRCLIB
+    pub instrumental: &'static str,
     pub show_album: &'static str,
     pub show_current_track: &'static str,
     pub file_missing: &'static str,
@@ -285,9 +295,10 @@ mod tests {
     use std::collections::BTreeSet;
 
     /// Шаблоны с подстановками — чтобы сравнить их наборы `{…}` в языках
-    fn templates(t: &Texts) -> [(&'static str, &'static str); 24] {
+    fn templates(t: &Texts) -> [(&'static str, &'static str); 25] {
         [
             ("found_of", t.found_of),
+            ("bitrate", t.bitrate),
             ("adding_progress", t.adding_progress),
             ("updating_library_progress", t.updating_library_progress),
             ("more_files_failed", t.more_files_failed),

@@ -40,7 +40,12 @@ const VOLUME_SCROLL_RANGE: f32 = 400.0;
 
 impl PlayerApp {
     pub(crate) fn render_controls(&mut self, ui: &mut Ui) {
-        self.render_volume(ui);
+        // Строка над временем: справа громкость
+        let (row, _) = ui.allocate_exact_size(
+            vec2(ui.available_width(), VOLUME_BUTTON_SIZE),
+            Sense::hover(),
+        );
+        self.render_volume(ui, row);
 
         let player = self.core.controller.player();
         let has_track = player.current_track.is_some();
@@ -191,14 +196,10 @@ impl PlayerApp {
         components::paint_slider(ui, rect, fraction, SLIDER_TRACK_HEIGHT, SLIDER_THUMB_RADIUS);
     }
 
-    /// Строка громкости: кнопка у правого края, над оставшимся временем. Клик — mute.
+    /// Громкость: кнопка у правого края строки `row`, над оставшимся временем. Клик — mute.
     /// При наведении над кнопкой появляется блок с ползунком; он не прячется, пока курсор
     /// на кнопке, на блоке или между ними и пока ползунок тянут
-    fn render_volume(&mut self, ui: &mut Ui) {
-        let (row, _) = ui.allocate_exact_size(
-            vec2(ui.available_width(), VOLUME_BUTTON_SIZE),
-            Sense::hover(),
-        );
+    fn render_volume(&mut self, ui: &mut Ui, row: Rect) {
         let button_rect = Rect::from_min_size(
             pos2(row.right() - VOLUME_BUTTON_SIZE, row.top()),
             vec2(VOLUME_BUTTON_SIZE, VOLUME_BUTTON_SIZE),

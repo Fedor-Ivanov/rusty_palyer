@@ -257,6 +257,36 @@ pub fn paint_add(ui: &Ui, rect: Rect, hover: f32) {
     }
 }
 
+/// «Текст песни»: облачко реплики с хвостиком внизу слева и две строки текста в нём
+const LYRICS_BUBBLE: [(f32, f32); 12] = [
+    (4.5, 7.0),
+    (7.0, 4.5),
+    (17.0, 4.5),
+    (19.5, 7.0),
+    (19.5, 13.5),
+    (17.0, 16.0),
+    (11.5, 16.0),
+    (7.5, 19.5),
+    (7.5, 16.0),
+    (7.0, 16.0),
+    (4.5, 13.5),
+    (4.5, 7.0),
+];
+const LYRICS_LINES: [[(f32, f32); 2]; 2] =
+    [[(8.5, 8.75), (15.5, 8.75)], [(8.5, 11.75), (13.0, 11.75)]];
+const LYRICS_STROKE: f32 = 1.7;
+
+/// Переключатель текста песни. `active` и `hover`: 0.0..=1.0, плавные переходы включения
+/// и наведения
+pub fn paint_lyrics(ui: &Ui, rect: Rect, active: f32, hover: f32) {
+    paint_hover_circle(ui, rect, hover);
+    let color = toggle_color(active);
+    stroke_icon_path(ui, rect, &LYRICS_BUBBLE, LYRICS_STROKE, color);
+    for line in LYRICS_LINES {
+        stroke_icon_path(ui, rect, &line, LYRICS_STROKE, color);
+    }
+}
+
 /// Переключатель случайного порядка.
 /// `active` и `hover`: 0.0..=1.0, плавные переходы включения и наведения.
 pub fn paint_shuffle(ui: &Ui, rect: Rect, active: f32, hover: f32) {
