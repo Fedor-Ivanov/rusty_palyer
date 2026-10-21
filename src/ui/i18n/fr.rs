@@ -92,6 +92,7 @@ pub static TEXTS: Texts = Texts {
                               Les morceaux eux-mêmes ne seront pas supprimés.",
 
     language: "Langue",
+    version: "Version",
 
     remove_album_title: "Supprimer l'album de la bibliothèque ?",
     remove_album_message: "« {album} » sera supprimé de votre bibliothèque. \

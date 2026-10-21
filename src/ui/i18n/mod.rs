@@ -165,6 +165,7 @@ pub struct Texts {
 
     // ---- настройки
     pub language: &'static str,
+    pub version: &'static str,
 
     // ---- диалог удаления из медиатеки
     pub remove_album_title: &'static str,

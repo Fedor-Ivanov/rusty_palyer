@@ -47,6 +47,22 @@ impl PlayerApp {
                     }
                 });
             });
+            ui.add_space(12.0);
+
+            // Версия приложения — из Cargo.toml на момент сборки
+            ui.horizontal(|ui| {
+                ui.add(
+                    Label::new(RichText::new(t().version).size(14.0).color(TEXT_MUTED))
+                        .selectable(false),
+                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ui.add(Label::new(
+                        RichText::new(env!("CARGO_PKG_VERSION"))
+                            .size(14.0)
+                            .color(TEXT),
+                    ));
+                });
+            });
 
             ui.add_space(20.0);
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {

@@ -82,6 +82,7 @@ pub static TEXTS: Texts = Texts {
     delete_playlist_message: "Плейлист «{playlist}» буде видалено. Самі треки не видаляються.",
 
     language: "Мова",
+    version: "Версія",
 
     remove_album_title: "Видалити альбом з медіатеки?",
     remove_album_message: "Альбом «{album}» буде видалено з медіатеки. \

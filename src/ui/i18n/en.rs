@@ -91,6 +91,7 @@ pub static TEXTS: Texts = Texts {
                               The tracks themselves won't be removed.",
 
     language: "Language",
+    version: "Version",
 
     remove_album_title: "Remove album from library?",
     remove_album_message: "\u{201C}{album}\u{201D} will be removed from your library. \
