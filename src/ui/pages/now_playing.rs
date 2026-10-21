@@ -1,7 +1,7 @@
 //! Центральная область: информация о текущем треке и обложка, без треков — «Open files»;
 //! плашка текущего трека, пока открыт вид библиотеки.
 
-use eframe::egui::{self, CursorIcon, Id, Rect, RichText, Sense, Shape, Ui, pos2, vec2};
+use eframe::egui::{self, CursorIcon, Rect, RichText, Sense, Shape, Ui, pos2, vec2};
 
 use crate::{
     core::library::{
@@ -13,11 +13,11 @@ use crate::{
         app::PlayerApp,
         components,
         components::format_secs,
-        covers::{Cover, CoverSize},
+        covers::CoverSize,
         i18n::t,
         loading::Destination,
         navigation::{AlbumKey, Route},
-        style::theme::{TEXT, TEXT_MUTED, TRACK_BACKDROP_FADE_SECS},
+        style::theme::{TEXT, TEXT_MUTED},
     },
 };
 use std::path::PathBuf;
@@ -62,29 +62,20 @@ impl PlayerApp {
     /// Фон деталей текущего трека — его размытая обложка — под центральной областью `ui`
     /// и ниже, под панелью управления до низа окна. Внизу центральной области начинает
     /// растворяться и к низу окна исчезает: без резкой границы с панелью управления.
-    /// У каждого трека своё проявление — при смене трека новый фон плавно появляется, когда
-    /// готов. Возвращает фигуру: её кладут под панели (см. `ui`), а не поверх них
+    /// При смене трека прежний фон плавно сменяется новым (см. `CoverFade`). Возвращает
+    /// фигуру: её кладут под панели (см. `ui`), а не поверх них
     pub(crate) fn track_backdrop(&mut self, ui: &Ui) -> Option<Shape> {
         let track = self.core.controller.player().current_track.clone()?;
-        let path = track.path.clone();
         let candidates = self.cover_candidates(&track);
         let cover = self.covers.get(&candidates, CoverSize::Backdrop);
-        let visibility = ui.ctx().animate_bool_with_time(
-            Id::unique(("track_backdrop", &path)),
-            matches!(cover, Cover::Ready(_)),
-            TRACK_BACKDROP_FADE_SECS,
-        );
+        let progress = self.backdrop_fade.update(ui, cover);
         let content = ui.max_rect();
         let rect = Rect::from_min_max(
             content.min,
             pos2(content.right(), ui.ctx().content_rect().bottom()),
         );
-        components::backdrop_shape(
-            rect,
-            content.bottom() - BACKDROP_FADE_ABOVE,
-            cover,
-            visibility,
-        )
+        self.backdrop_fade
+            .backdrop(rect, content.bottom() - BACKDROP_FADE_ABOVE, progress)
     }
 
     /// Где искать обложку трека: сначала в нём самом (у треков сборника картинки бывают
@@ -170,11 +161,13 @@ impl PlayerApp {
             let free = ui.available_rect_before_wrap();
             let side = free.width().min(free.height()).clamp(0.0, COVER_MAX_SIZE);
             ui.allocate_rect(free, Sense::hover());
+            // Пока обложка нового трека читается, видна прежняя — см. `CoverFade`
             let cover = self.covers.get(&cover_candidates, CoverSize::Large);
-            components::paint_cover(
+            let progress = self.cover_fade.update(ui, cover);
+            self.cover_fade.paint(
                 ui,
                 Rect::from_center_size(free.center(), vec2(side, side)),
-                cover,
+                progress,
                 COVER_RADIUS,
             );
         });

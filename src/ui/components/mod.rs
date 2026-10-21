@@ -16,7 +16,7 @@ mod track_list;
 
 pub use banners::{BANNER_GAP, BANNER_TOP, error_banner, loading_banner};
 pub use buttons::{ButtonStyle, HitShape, icon_button, pill_button, toggle_button};
-pub use cover::{backdrop_shape, paint_cover};
+pub use cover::{CoverFade, paint_cover};
 pub use dialog::{Confirm, confirm_dialog, modal};
 pub use format::format_secs;
 pub use grid::{Tile, TileGridView, TileLine};

@@ -10,7 +10,7 @@ use std::{
 
 use super::{
     action::Action,
-    components::{self, TileGridView, TrackListView},
+    components::{self, CoverFade, TileGridView, TrackListView},
     covers::CoverCache,
     dialogs::remove::LibraryRemoval,
     i18n,
@@ -67,6 +67,9 @@ pub struct PlayerApp {
     pub(crate) pending_removal: Option<LibraryRemoval>,
     /// Миниатюры обложек для сетки альбомов
     pub(crate) covers: CoverCache,
+    /// Обложка и фон текущего трека: плавная смена при переключении трека
+    pub(crate) cover_fade: CoverFade,
+    pub(crate) backdrop_fade: CoverFade,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -113,6 +116,8 @@ impl PlayerApp {
             search: LibrarySearch::default(),
             pending_removal: None,
             covers: CoverCache::new(),
+            cover_fade: CoverFade::default(),
+            backdrop_fade: CoverFade::default(),
         };
         // Библиотека сохранена старым форматом — один раз перечитываем её теги в фоне
         if let Some(paths) = outdated {

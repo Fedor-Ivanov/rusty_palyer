@@ -59,8 +59,8 @@ pub const MODAL_BACKDROP: Color32 = Color32::from_black_alpha(120);
 pub const TRACK_BACKDROP_OPACITY: f32 = 0.55;
 pub const TRACK_BACKDROP_SHADE_TOP: Color32 = Color32::from_black_alpha(150);
 pub const TRACK_BACKDROP_SHADE_BOTTOM: Color32 = Color32::from_black_alpha(70);
-/// Проявление фона, когда размытая обложка готова
-pub const TRACK_BACKDROP_FADE_SECS: f32 = 0.4;
+/// Смена обложки и фона текущего трека: новая проявляется поверх прежней
+pub const COVER_CROSSFADE_SECS: f32 = 0.25;
 /// Второстепенная кнопка в покое — HIGHLIGHT_STRONG, при наведении — светлее
 pub const SECONDARY_BUTTON_HOVER: Color32 = Color32::from_rgba_premultiplied(66, 66, 66, 66);
 

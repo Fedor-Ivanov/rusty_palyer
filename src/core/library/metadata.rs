@@ -6,7 +6,10 @@ use lofty::{
     probe::Probe,
     tag::{Accessor, ItemKey},
 };
-use std::path::Path;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
@@ -83,6 +86,42 @@ pub fn read_cover(path: &Path) -> Option<Vec<u8>> {
         .map(|picture| picture.data().to_vec())
 }
 
+/// Обложка альбома картинкой рядом с аудиофайлами в папке `dir` — так её часто хранят
+/// вместо тегов. Берётся картинка с говорящим именем (`cover.jpg`, `Folder.png`, `front.jpg`…),
+/// а если таких нет — единственная картинка в папке. Из нескольких картинок с другими
+/// именами (сканы буклета, задник диска) не угадываем: показать не ту хуже, чем никакую
+pub fn read_folder_cover(dir: &Path) -> Option<Vec<u8>> {
+    const IMAGE_EXTENSIONS: [&str; 4] = ["jpg", "jpeg", "png", "webp"];
+    const COVER_NAMES: [&str; 5] = ["cover", "folder", "front", "albumart", "album"];
+
+    let mut images: Vec<PathBuf> = fs::read_dir(dir)
+        .ok()?
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| {
+            path.extension()
+                .and_then(|ext| ext.to_str())
+                .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+        })
+        .collect();
+    images.sort();
+
+    let named = |name: &str| {
+        images.iter().find(|path| {
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .is_some_and(|stem| stem.to_lowercase() == name)
+        })
+    };
+    let cover = COVER_NAMES
+        .iter()
+        .find_map(|name| named(name))
+        .or(match images.as_slice() {
+            [single] => Some(single),
+            _ => None,
+        })?;
+    fs::read(cover).ok()
+}
+
 /// Чинит теги в Windows-1251, прочитанные как Latin-1.
 ///
 /// Старые MP3 часто хранят русские теги в кодировке Windows-1251, но в ID3 указана Latin-1.
@@ -115,7 +154,41 @@ fn fix_cp1251(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::fix_cp1251;
+    use super::{fix_cp1251, read_folder_cover};
+    use std::fs;
+
+    /// Новая пустая временная папка с файлами `names`; содержимое файла — его имя
+    fn folder(names: &[&str]) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("rusty_player_cover_{}", fastrand::u64(..)));
+        fs::create_dir_all(&dir).unwrap();
+        for name in names {
+            fs::write(dir.join(name), name).unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn folder_cover_prefers_cover_names_then_single_image() {
+        let read = |names: &[&str]| {
+            let dir = folder(names);
+            let cover = read_folder_cover(&dir).map(|bytes| String::from_utf8(bytes).unwrap());
+            fs::remove_dir_all(dir).unwrap();
+            cover
+        };
+        // Единственная картинка — обложка, как бы она ни называлась
+        assert_eq!(
+            read(&["01 Song.mp3", "Dot Hacker - N°3.jpg"]).as_deref(),
+            Some("Dot Hacker - N°3.jpg")
+        );
+        // Говорящее имя важнее остальных картинок, регистр не важен
+        assert_eq!(
+            read(&["back.jpg", "Folder.PNG", "cd.jpg"]).as_deref(),
+            Some("Folder.PNG")
+        );
+        // Несколько картинок без говорящих имён — не угадываем
+        assert_eq!(read(&["back.jpg", "booklet.jpg"]), None);
+        assert_eq!(read(&["01 Song.mp3"]), None);
+    }
 
     #[test]
     fn decodes_cp1251_read_as_latin1() {

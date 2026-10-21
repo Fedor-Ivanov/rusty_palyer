@@ -7,6 +7,7 @@
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use std::{
     collections::HashMap,
+    hash::{DefaultHasher, Hash, Hasher},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -16,7 +17,7 @@ use std::{
     time::Duration,
 };
 
-use crate::core::library::metadata::read_cover;
+use crate::core::library::metadata::{read_cover, read_folder_cover};
 
 /// Сколько обложек держать: миниатюра ~400 КБ, итого до ~120 МБ видеопамяти
 const MAX_COVERS: usize = 300;
@@ -68,13 +69,18 @@ enum Entry {
     },
     Ready {
         texture: TextureHandle,
+        /// Хеш исходной картинки: по нему одинаковые обложки разных треков делят одну текстуру
+        content: u64,
         last_used: u64,
     },
 }
 
+/// Прочитанная обложка: картинка и хеш исходных байтов
+type Loaded = Option<(ColorImage, u64)>;
+
 pub struct CoverCache {
     requests: Sender<Request>,
-    results: Receiver<(Key, Option<ColorImage>)>,
+    results: Receiver<(Key, Loaded)>,
     entries: HashMap<Key, Entry>,
     /// Номер кадра — для вытеснения давно не показанных миниатюр
     frame: u64,
@@ -96,8 +102,7 @@ impl CoverCache {
                     let Ok((key, candidates)) = key else {
                         break;
                     };
-                    // Первый файл, в тегах которого обложка есть: обычно это первый же
-                    let image = candidates.iter().find_map(|path| load_cover(path, key.1));
+                    let image = find_cover(&candidates, key.1);
                     if result_tx.send((key, image)).is_err() {
                         break;
                     }
@@ -126,7 +131,9 @@ impl CoverCache {
             let _ = self.requests.send((key.clone(), candidates.to_vec()));
         }
         match self.entries.get_mut(&key) {
-            Some(Entry::Ready { texture, last_used }) => {
+            Some(Entry::Ready {
+                texture, last_used, ..
+            }) => {
                 *last_used = frame;
                 Cover::Ready(texture)
             }
@@ -141,14 +148,19 @@ impl CoverCache {
     /// Принимает готовые миниатюры и вытесняет лишние. Вызывать раз за кадр
     pub fn update(&mut self, ctx: &egui::Context) {
         self.frame += 1;
-        while let Ok((key, image)) = self.results.try_recv() {
-            let entry = match image {
-                Some(image) => Entry::Ready {
-                    texture: ctx.load_texture(
-                        format!("cover {}", key.0.display()),
-                        image,
-                        TextureOptions::LINEAR,
-                    ),
+        while let Ok((key, loaded)) = self.results.try_recv() {
+            let entry = match loaded {
+                Some((image, content)) => Entry::Ready {
+                    // Та же картинка уже есть (у треков одного альбома обложка обычно одна) —
+                    // берём её текстуру: смена трека внутри альбома не меняет обложку вовсе
+                    texture: self.texture_with(content, key.1).unwrap_or_else(|| {
+                        ctx.load_texture(
+                            format!("cover {}", key.0.display()),
+                            image,
+                            TextureOptions::LINEAR,
+                        )
+                    }),
+                    content,
                     last_used: self.frame,
                 },
                 None => Entry::Missing {
@@ -164,6 +176,20 @@ impl CoverCache {
         }
 
         self.evict();
+    }
+
+    /// Уже загруженная текстура обложки с хешем `content` и размером `size`
+    fn texture_with(&self, content: u64, size: CoverSize) -> Option<TextureHandle> {
+        self.entries
+            .iter()
+            .find_map(|((_, entry_size), entry)| match entry {
+                Entry::Ready {
+                    texture,
+                    content: other,
+                    ..
+                } if *other == content && *entry_size == size => Some(texture.clone()),
+                _ => None,
+            })
     }
 
     /// Оставляет MAX_COVERS недавно показанных; заказанные, но не готовые не трогает
@@ -193,12 +219,31 @@ impl CoverCache {
     }
 }
 
-/// Обложка из тегов, уменьшенная так, чтобы большая сторона была не больше
+/// Обложка для файлов `candidates`: из тегов первого, где она есть (обычно это первый же),
+/// а если ни в одном её нет — картинкой из их папки (см. `read_folder_cover`).
+/// Вместе с картинкой — хеш исходных байтов
+fn find_cover(candidates: &[PathBuf], size: CoverSize) -> Loaded {
+    candidates
+        .iter()
+        .find_map(|path| read_cover(path).and_then(|bytes| decode_cover(&bytes, size)))
+        .or_else(|| {
+            // Папки по порядку кандидатов, каждая один раз: треки альбома обычно в одной
+            let mut dirs: Vec<&Path> = Vec::new();
+            for dir in candidates.iter().filter_map(|path| path.parent()) {
+                if !dirs.contains(&dir) {
+                    dirs.push(dir);
+                }
+            }
+            dirs.into_iter()
+                .find_map(|dir| read_folder_cover(dir).and_then(|bytes| decode_cover(&bytes, size)))
+        })
+}
+
+/// Картинка обложки, уменьшенная так, чтобы большая сторона была не больше
 /// `size.pixels()`; для фона — ещё и размытая
-fn load_cover(path: &Path, size: CoverSize) -> Option<ColorImage> {
-    let bytes = read_cover(path)?;
+fn decode_cover(bytes: &[u8], size: CoverSize) -> Loaded {
     let pixels = size.pixels();
-    let mut image = image::load_from_memory(&bytes)
+    let mut image = image::load_from_memory(bytes)
         .ok()?
         .thumbnail(pixels, pixels)
         .to_rgba8();
@@ -206,5 +251,10 @@ fn load_cover(path: &Path, size: CoverSize) -> Option<ColorImage> {
         image = image::imageops::blur(&image, BACKDROP_BLUR_SIGMA);
     }
     let size = [image.width() as usize, image.height() as usize];
-    Some(ColorImage::from_rgba_unmultiplied(size, image.as_raw()))
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    Some((
+        ColorImage::from_rgba_unmultiplied(size, image.as_raw()),
+        hasher.finish(),
+    ))
 }
