@@ -93,7 +93,7 @@ pub static TEXTS: Texts = Texts {
 
     language: "Langue",
     version: "Version",
-    glass_tint: "Teinte du verre",
+    glass_tint: "Couleur",
     transparency: "Transparence",
     tint_graphite: "Graphite",
     tint_blue: "Bleu",

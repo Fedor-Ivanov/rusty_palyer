@@ -83,7 +83,7 @@ pub static TEXTS: Texts = Texts {
 
     language: "Язык",
     version: "Версия",
-    glass_tint: "Оттенок стекла",
+    glass_tint: "Цвет",
     transparency: "Прозрачность",
     tint_graphite: "Графит",
     tint_blue: "Синий",

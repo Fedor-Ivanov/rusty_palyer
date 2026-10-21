@@ -23,6 +23,11 @@ const TRANSPARENCY_SLIDER_WIDTH: f32 =
     SWATCH_SIZE * GlassTint::ALL.len() as f32 + SWATCH_GAP * (GlassTint::ALL.len() - 1) as f32;
 const SLIDER_TRACK_HEIGHT: f32 = 4.0;
 const SLIDER_THUMB_RADIUS: f32 = 7.0;
+/// Строка настройки — высотой с самый высокий элемент, список языка: подписи всех строк
+/// по центру своих элементов, а строки идут с одним шагом
+const SETTING_ROW_HEIGHT: f32 = 32.0;
+/// Зазор между строками настроек
+const SETTING_ROW_GAP: f32 = 6.0;
 
 impl PlayerApp {
     /// Окно настроек — пока открыто. Изменения применяются сразу и сохраняются сами
@@ -48,7 +53,7 @@ impl PlayerApp {
                     self.dispatch(Action::SetLanguage(language));
                 }
             });
-            ui.add_space(12.0);
+            ui.add_space(SETTING_ROW_GAP);
 
             // Стекло: оттенок и прозрачность. Меняются сразу — окно видно за диалогом
             let glass = self.core.settings.glass();
@@ -61,7 +66,7 @@ impl PlayerApp {
                     }
                 }
             });
-            ui.add_space(12.0);
+            ui.add_space(SETTING_ROW_GAP);
             setting_row(ui, t().transparency, |ui| {
                 if let Some(transparency) = components::slider(
                     ui,
@@ -76,7 +81,7 @@ impl PlayerApp {
                     }));
                 }
             });
-            ui.add_space(12.0);
+            ui.add_space(SETTING_ROW_GAP);
 
             // Версия приложения — из Cargo.toml на момент сборки
             setting_row(ui, t().version, |ui| {
@@ -99,8 +104,13 @@ impl PlayerApp {
 }
 
 /// Строка настройки: подпись слева, элемент управления прижат вправо
+/// Высота строки задана заранее: в `horizontal` подпись центрировалась бы по высоте строки
+/// на момент её добавления — до элемента справа, и рядом с высоким списком языка
+/// оказывалась бы выше его середины
 fn setting_row(ui: &mut Ui, label: &str, add_control: impl FnOnce(&mut Ui)) {
-    ui.horizontal(|ui| {
+    let size = vec2(ui.available_width(), SETTING_ROW_HEIGHT);
+    ui.allocate_ui_with_layout(size, Layout::left_to_right(Align::Center), |ui| {
+        ui.set_min_height(SETTING_ROW_HEIGHT);
         ui.add(Label::new(RichText::new(label).size(14.0).color(TEXT_MUTED)).selectable(false));
         ui.with_layout(Layout::right_to_left(Align::Center), add_control);
     });
