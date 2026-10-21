@@ -8,7 +8,7 @@ use eframe::egui::{
 
 use crate::ui::{
     covers::Cover,
-    theme::{
+    style::theme::{
         HIGHLIGHT, TEXT_FAINT, TRACK_BACKDROP_OPACITY, TRACK_BACKDROP_SHADE_BOTTOM,
         TRACK_BACKDROP_SHADE_TOP,
     },

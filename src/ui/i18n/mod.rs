@@ -18,7 +18,7 @@ mod uk;
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use crate::settings::Language;
+use crate::core::settings::Language;
 
 /// Правило форм числа в русском и украинском: 1, 21, 101 — «трек»; 2–4, 22–24 — «трека»;
 /// 0, 5–20, 25–30, 111–114 — «треков»

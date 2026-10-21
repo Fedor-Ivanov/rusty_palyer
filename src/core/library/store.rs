@@ -5,10 +5,11 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeSet, HashSet},
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use super::Track;
+use crate::core::storage::write_atomically;
 
 const FILE_NAME: &str = "library.json";
 /// Версия формата файла. 2 — в треках появился год, 3 — номера трека и диска,
@@ -181,22 +182,10 @@ impl Library {
     }
 }
 
-/// Пишет `value` в JSON-файл `file`: во временный файл и переименовывает его поверх старого.
-/// Если запись прервётся, старый файл останется целым, а не полузаписанным
-pub fn write_atomically(file: &Path, value: &impl Serialize) -> Result<(), String> {
-    if let Some(dir) = file.parent() {
-        fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    }
-    let json = serde_json::to_string(value).map_err(|e| e.to_string())?;
-    let temp = file.with_extension("json.tmp");
-    fs::write(&temp, json).map_err(|e| e.to_string())?;
-    fs::rename(&temp, file).map_err(|e| e.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::Library;
-    use crate::library::Track;
+    use crate::core::library::Track;
     use std::{collections::BTreeSet, fs, path::Path};
 
     fn track(path: &Path) -> Track {

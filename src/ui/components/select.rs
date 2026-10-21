@@ -3,7 +3,7 @@
 use eframe::egui::{self, Align2, CursorIcon, FontId, RectAlign, Sense, Stroke, Ui, pos2, vec2};
 
 use super::menu::{menu_item, menu_style};
-use crate::ui::theme::{HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, TEXT, TEXT_MUTED};
+use crate::ui::style::theme::{HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, TEXT, TEXT_MUTED};
 
 const SELECT_SIZE: egui::Vec2 = vec2(160.0, 32.0);
 const SELECT_PADDING: f32 = 12.0;

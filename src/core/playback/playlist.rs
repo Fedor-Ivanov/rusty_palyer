@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-use crate::library::Track;
+use crate::core::library::Track;
 
 /// Режим повтора: включён может быть только один
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Default)]
@@ -106,7 +106,7 @@ impl TrackList {
 #[cfg(test)]
 mod tests {
     use super::TrackList;
-    use crate::library::Track;
+    use crate::core::library::Track;
     use std::{collections::BTreeSet, path::PathBuf};
 
     fn list(len: usize) -> TrackList {

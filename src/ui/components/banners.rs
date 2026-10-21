@@ -6,7 +6,7 @@ use eframe::egui::{
 
 use crate::ui::{
     i18n::{fill, t},
-    theme::{BANNER_BORDER, BANNER_FILL, RED, SLIDER_TRACK, TEXT, TEXT_MUTED},
+    style::theme::{BANNER_BORDER, BANNER_FILL, RED, SLIDER_TRACK, TEXT, TEXT_MUTED},
 };
 
 const ERROR_BANNER_MAX_WIDTH: f32 = 440.0;

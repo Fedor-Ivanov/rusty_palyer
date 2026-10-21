@@ -6,11 +6,11 @@ use std::collections::BTreeSet;
 
 use super::selection::{Marquee, Selection};
 use crate::{
-    library::Track,
+    core::library::Track,
     ui::{
-        format::format_secs,
+        components::format_secs,
         i18n::t,
-        theme::{
+        style::theme::{
             HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, MARQUEE_FILL, MARQUEE_STROKE,
             SELECTION_STROKE_WIDTH, TEXT, TEXT_FAINT, TEXT_MUTED, TRACK_ACTIVE_FADE_SECS,
         },

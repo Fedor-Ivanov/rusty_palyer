@@ -2,7 +2,7 @@
 
 use eframe::egui::{self, Align2, CursorIcon, FontId, Response, RichText, Sense, Ui, pos2, vec2};
 
-use crate::ui::theme::{
+use crate::ui::style::theme::{
     HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, TEXT, TEXT_MUTED, TRACK_ACTIVE_FADE_SECS,
 };
 

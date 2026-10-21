@@ -128,7 +128,7 @@ pub fn group(tracks: &[Track]) -> (Vec<ArtistGroup>, Vec<AlbumGroup>) {
 #[cfg(test)]
 mod tests {
     use super::{UNKNOWN_ALBUM, UNKNOWN_ARTIST, group};
-    use crate::library::Track;
+    use crate::core::library::Track;
     use std::path::PathBuf;
 
     fn numbered(name: &str, disc: Option<u32>, number: Option<u32>) -> Track {

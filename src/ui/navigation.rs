@@ -2,12 +2,12 @@
 //! полей «вид», «исполнитель», «альбом» — недопустимые сочетания (альбом в Songs) не выразить.
 //! Переходы — только через `PlayerApp::navigate`: там же всё, что меняется вместе с ними.
 
-use super::PlayerApp;
-use crate::{library::groups::AlbumGroup, ui::i18n};
+use super::app::PlayerApp;
+use crate::{core::library::groups::AlbumGroup, ui::i18n};
 
 /// Раздел — верхний уровень навигации: пункт меню и заголовок
 #[derive(Clone, Copy, PartialEq)]
-pub(super) enum Section {
+pub(crate) enum Section {
     NowPlaying,
     Artists,
     Albums,
@@ -16,10 +16,10 @@ pub(super) enum Section {
 
 impl Section {
     /// Разделы медиатеки — пункты меню слева, по порядку
-    pub(super) const LIBRARY: [Section; 3] = [Section::Artists, Section::Albums, Section::Songs];
+    pub(crate) const LIBRARY: [Section; 3] = [Section::Artists, Section::Albums, Section::Songs];
 
     /// Название на языке интерфейса
-    pub(super) fn title(self) -> &'static str {
+    pub(crate) fn title(self) -> &'static str {
         let t = i18n::t();
         match self {
             Self::NowPlaying => t.now_playing,
@@ -32,7 +32,7 @@ impl Section {
 
 /// Что открыто в центральной области
 #[derive(Clone, PartialEq)]
-pub(super) enum Route {
+pub(crate) enum Route {
     NowPlaying,
     Artists,
     /// Профиль исполнителя: его альбомы
@@ -50,7 +50,7 @@ pub(super) enum Route {
 
 impl Route {
     /// Раздел, внутри которого открыта страница
-    pub(super) fn section(&self) -> Section {
+    pub(crate) fn section(&self) -> Section {
         match self {
             Self::NowPlaying => Section::NowPlaying,
             Self::Artists | Self::Artist(_) | Self::ArtistAlbum { .. } => Section::Artists,
@@ -60,7 +60,7 @@ impl Route {
     }
 
     /// Открытый альбом — откуда бы его ни открыли
-    pub(super) fn album(&self) -> Option<&AlbumKey> {
+    pub(crate) fn album(&self) -> Option<&AlbumKey> {
         match self {
             Self::Album(album) | Self::ArtistAlbum { album, .. } => Some(album),
             _ => None,
@@ -68,7 +68,7 @@ impl Route {
     }
 
     /// Уровень выше: из альбома — туда, откуда его открыли, из профиля — к исполнителям
-    pub(super) fn parent(&self) -> Route {
+    pub(crate) fn parent(&self) -> Route {
         match self {
             Self::ArtistAlbum { artist, .. } => Self::Artist(artist.clone()),
             Self::Artist(_) => Self::Artists,
@@ -93,13 +93,13 @@ impl From<Section> for Route {
 /// Какой альбом открыт. Альбом — пара «название + исполнитель», как при группировке;
 /// хранятся имена, а не номер: номера альбомов меняются вместе с библиотекой
 #[derive(Clone, PartialEq)]
-pub(super) struct AlbumKey {
-    pub(super) title: String,
-    pub(super) artist: String,
+pub(crate) struct AlbumKey {
+    pub(crate) title: String,
+    pub(crate) artist: String,
 }
 
 impl AlbumKey {
-    pub(super) fn of(album: &AlbumGroup) -> Self {
+    pub(crate) fn of(album: &AlbumGroup) -> Self {
         Self {
             title: album.title.clone(),
             artist: album.artist.clone(),
@@ -107,7 +107,7 @@ impl AlbumKey {
     }
 
     /// Сравнение без учёта регистра — как при группировке
-    pub(super) fn matches(&self, album: &AlbumGroup) -> bool {
+    pub(crate) fn matches(&self, album: &AlbumGroup) -> bool {
         album.title.to_lowercase() == self.title.to_lowercase()
             && album.artist.to_lowercase() == self.artist.to_lowercase()
     }
@@ -117,7 +117,7 @@ impl PlayerApp {
     /// Открывает `route`. Здесь же всё, что меняется вместе с переходом:
     /// - поиск относится к разделу — при смене раздела очищается;
     /// - выделение треков альбома относится к открытому альбому — при смене альбома сбрасывается
-    pub(super) fn navigate(&mut self, route: Route) {
+    pub(crate) fn navigate(&mut self, route: Route) {
         if route == self.route {
             return;
         }

@@ -6,7 +6,7 @@ use eframe::egui::{
 };
 use std::sync::Arc;
 
-use crate::ui::theme::{HOVER_FADE_SECS, RESIZE_LINE, TEXT, TEXT_FAINT, TEXT_MUTED};
+use crate::ui::style::theme::{HOVER_FADE_SECS, RESIZE_LINE, TEXT, TEXT_FAINT, TEXT_MUTED};
 
 const BLOCK_TITLE_SIZE: f32 = 16.0;
 /// Пояснение рядом с заголовком

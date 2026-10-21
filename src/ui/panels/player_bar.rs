@@ -5,14 +5,17 @@ use eframe::egui::{
     StrokeKind, Ui, Vec2, pos2, vec2,
 };
 
-use super::PlayerApp;
 use crate::{
-    playback::PlayerState,
+    core::playback::PlayerState,
     ui::{
-        format::format_secs,
-        icons::{paint_play_pause, paint_skip, paint_volume, skip_hit_rect},
-        theme::{BANNER_BORDER, BANNER_FILL, HOVER_FADE_SECS, SLIDER_TRACK, TEXT, TEXT_MUTED},
-        widgets,
+        action::Action,
+        app::PlayerApp,
+        components,
+        components::format_secs,
+        style::icons::{paint_play_pause, paint_skip, paint_volume, skip_hit_rect},
+        style::theme::{
+            BANNER_BORDER, BANNER_FILL, HOVER_FADE_SECS, SLIDER_TRACK, TEXT, TEXT_MUTED,
+        },
     },
 };
 
@@ -36,19 +39,10 @@ const VOLUME_THUMB_RADIUS: f32 = 6.0;
 const VOLUME_SCROLL_RANGE: f32 = 400.0;
 
 impl PlayerApp {
-    pub(super) fn toggle_play(&mut self) {
-        let result = if self.controller.player().state == PlayerState::Playing {
-            self.controller.pause()
-        } else {
-            self.controller.play()
-        };
-        self.set_result(result);
-    }
-
-    pub(super) fn render_controls(&mut self, ui: &mut Ui) {
+    pub(crate) fn render_controls(&mut self, ui: &mut Ui) {
         self.render_volume(ui);
 
-        let player = self.controller.player();
+        let player = self.state.controller.player();
         let has_track = player.current_track.is_some();
         let playing = player.state == PlayerState::Playing;
         let duration = player
@@ -58,7 +52,7 @@ impl PlayerApp {
 
         let position = self
             .drag_secs
-            .unwrap_or(self.controller.position_ms() as f32 / 1000.0)
+            .unwrap_or(self.state.controller.position_ms() as f32 / 1000.0)
             .min(duration);
 
         // Ряд: время слева, кнопка по центру, длительность справа
@@ -99,20 +93,20 @@ impl PlayerApp {
         let next_rect = Rect::from_center_size(row.center() + skip_offset, skip_size);
 
         // prev/next реагируют только на контур иконки, а не на весь квадрат вокруг неё
-        let prev = widgets::icon_button(
+        let prev = components::icon_button(
             ui,
             skip_hit_rect(prev_rect),
-            widgets::HitShape::Rect,
+            components::HitShape::Rect,
             "prev",
             has_track,
         );
         paint_skip(ui, prev_rect, false, !has_track, prev.hover);
 
         // У play чёткий круг, поэтому и наведение считаем только внутри него
-        let play = widgets::icon_button(
+        let play = components::icon_button(
             ui,
             play_rect,
-            widgets::HitShape::Circle,
+            components::HitShape::Circle,
             "play_pause",
             has_track,
         );
@@ -125,32 +119,30 @@ impl PlayerApp {
         );
         paint_play_pause(ui, play_rect, morph, !has_track, play.hover);
 
-        let next = widgets::icon_button(
+        let next = components::icon_button(
             ui,
             skip_hit_rect(next_rect),
-            widgets::HitShape::Rect,
+            components::HitShape::Rect,
             "next",
             has_track,
         );
         paint_skip(ui, next_rect, true, !has_track, next.hover);
 
         if prev.clicked {
-            let result = self.controller.skip_prev();
-            self.set_result(result);
+            self.dispatch(Action::Previous);
         }
         if play.clicked {
-            self.toggle_play();
+            self.dispatch(Action::TogglePlay);
         }
         if next.clicked {
-            let result = self.controller.skip_next();
-            self.set_result(result);
+            self.dispatch(Action::Next);
         }
 
         ui.add_space(1.0);
         self.render_progress_bar(ui, position, duration, has_track && duration > 0.0);
     }
 
-    pub(super) fn render_progress_bar(
+    pub(crate) fn render_progress_bar(
         &mut self,
         ui: &mut Ui,
         position: f32,
@@ -185,8 +177,7 @@ impl PlayerApp {
                 self.drag_secs = None;
 
                 if let Some(secs) = secs {
-                    let result = self.controller.seek((secs * 1000.0) as u64);
-                    self.set_result(result);
+                    self.dispatch(Action::Seek(secs));
                 }
             }
         }
@@ -212,16 +203,21 @@ impl PlayerApp {
             pos2(row.right() - VOLUME_BUTTON_SIZE, row.top()),
             vec2(VOLUME_BUTTON_SIZE, VOLUME_BUTTON_SIZE),
         );
-        let button =
-            widgets::icon_button(ui, button_rect, widgets::HitShape::Circle, "volume", true);
+        let button = components::icon_button(
+            ui,
+            button_rect,
+            components::HitShape::Circle,
+            "volume",
+            true,
+        );
         let button_hovered = button.response.hovered();
         if button.clicked {
-            self.controller.toggle_mute();
+            self.dispatch(Action::ToggleMute);
         }
         paint_volume(
             ui,
             button_rect,
-            self.controller.volume().audible(),
+            self.state.controller.volume().audible(),
             button.hover,
         );
 
@@ -263,14 +259,14 @@ impl PlayerApp {
         if open && in_zone {
             let scroll = ui.input(|input| input.smooth_scroll_delta.y);
             if scroll != 0.0 {
-                let level = self.controller.volume().audible() + scroll / VOLUME_SCROLL_RANGE;
-                self.controller.set_volume_level(level);
+                let level = self.state.controller.volume().audible() + scroll / VOLUME_SCROLL_RANGE;
+                self.dispatch(Action::SetVolume(level));
             }
         }
 
         // Блок — поверх центральной области: он выше нижней панели
         let mut level = None;
-        let audible = self.controller.volume().audible();
+        let audible = self.state.controller.volume().audible();
         egui::Area::new(popup_id)
             .order(Order::Foreground)
             .fixed_pos(popup.min)
@@ -301,7 +297,7 @@ impl PlayerApp {
                 paint_vertical_slider(ui, slider, level.unwrap_or(audible));
             });
         if let Some(level) = level {
-            self.controller.set_volume_level(level);
+            self.dispatch(Action::SetVolume(level));
         }
     }
 }

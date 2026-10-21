@@ -9,5 +9,5 @@ pub mod scan;
 mod store;
 pub mod track;
 
-pub use store::{Library, write_atomically};
+pub use store::Library;
 pub use track::Track;

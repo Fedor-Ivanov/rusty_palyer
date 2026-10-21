@@ -3,15 +3,16 @@
 
 use eframe::egui::{self, Align, Align2, FontId, Layout, Sense, Ui, vec2};
 
-use super::{ADD_BUTTON_SIZE, ListFocus, PlayerApp, loading::Destination};
 use crate::{
-    library::Track,
-    playback::RepeatMode,
+    core::playback::RepeatMode,
     ui::{
+        action::Action,
+        app::{ADD_BUTTON_SIZE, ListFocus, PlayerApp},
+        components,
         i18n::{fill, t},
-        icons::{paint_repeat, paint_shuffle},
-        theme::{TEXT, TEXT_FAINT},
-        widgets,
+        loading::Destination,
+        style::icons::{paint_repeat, paint_shuffle},
+        style::theme::{TEXT, TEXT_FAINT},
     },
 };
 
@@ -19,23 +20,23 @@ use crate::{
 const ICON_BUTTON_GAP: f32 = 4.0;
 
 impl PlayerApp {
-    pub(super) fn render_playlist(&mut self, ui: &mut Ui) {
+    pub(crate) fn render_playlist(&mut self, ui: &mut Ui) {
         // Вся область панели — запоминаем до заголовка, чтобы заглушка встала по её центру
         let panel_rect = ui.max_rect();
         egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
             // Рядом с заголовком — сколько треков в плейлисте; пустой — без числа:
             // там и так «No tracks»
-            let count = self.controller.player().track_list.tracks.len();
+            let count = self.state.controller.player().track_list.tracks.len();
             let row = if count == 0 {
-                widgets::block_title(ui, t().playlist, Align::LEFT, TEXT)
+                components::block_title(ui, t().playlist, Align::LEFT, TEXT)
             } else {
                 let note = format!("· {}", t().count(count, &t().track_count));
-                widgets::block_title_with_note(ui, t().playlist, &note)
+                components::block_title_with_note(ui, t().playlist, &note)
             };
             self.render_add_button(ui, row, Destination::Playlist);
         });
 
-        if self.controller.player().track_list.tracks.is_empty() {
+        if self.state.controller.player().track_list.tracks.is_empty() {
             if self.loaders.is_empty() {
                 ui.painter().text(
                     panel_rect.center(),
@@ -48,14 +49,14 @@ impl PlayerApp {
             return;
         }
 
-        // Пока плейлист заимствован списком, менять плеер нельзя — запоминаем, что сделать
+        // Меню знает только, сколько строк выделено: какие — узнаём после списка
         let mut remove = false;
-        let list = &self.controller.player().track_list;
+        let list = &self.state.controller.player().track_list;
         let current = list.current_index;
         let response = self.playlist_view.show(
             ui,
             &list.tracks,
-            |index| widgets::RowState {
+            |index| components::RowState {
                 current: current == Some(index),
                 missing: false,
             },
@@ -68,7 +69,7 @@ impl PlayerApp {
                         &[("items", &t().count(count, &t().track_count))],
                     ),
                 };
-                if widgets::menu_item(ui, &label).clicked() {
+                if components::menu_item(ui, &label).clicked() {
                     remove = true;
                 }
             },
@@ -78,49 +79,27 @@ impl PlayerApp {
             self.focus = ListFocus::Playlist;
         }
         if remove || response.delete {
-            let result = self
-                .controller
-                .remove_tracks(self.playlist_view.selection());
-            self.set_result(result);
-            self.playlist_view.clear_selection();
+            let selected = self.playlist_view.selection().clone();
+            self.dispatch(Action::RemoveFromPlaylist(selected));
         }
         if let Some(index) = response.activated {
-            let result = self
-                .controller
-                .select(index)
-                .and_then(|()| self.controller.play());
-            self.set_result(result);
-        }
-    }
-
-    /// Добавляет треки в конец плейлиста. Если ничего ещё не выбрано, текущим становится
-    /// первый из добавленных; иначе текущий трек не трогаем
-    pub(super) fn add_to_playlist(&mut self, tracks: Vec<Track>) {
-        if tracks.is_empty() {
-            return;
-        }
-        let first_new = self.controller.player().track_list.tracks.len();
-        let nothing_selected = self.controller.player().current_track.is_none();
-        self.controller.append_tracks(tracks);
-        if nothing_selected {
-            let result = self.controller.select(first_new);
-            self.set_result(result);
+            self.dispatch(Action::PlayPlaylistTrack(index));
         }
     }
 
     /// Нижний блок плейлиста: слева shuffle, справа две кнопки повтора
-    pub(super) fn render_playback_modes(&mut self, ui: &mut Ui) {
-        let list = &self.controller.player().track_list;
+    pub(crate) fn render_playback_modes(&mut self, ui: &mut Ui) {
+        let list = &self.state.controller.player().track_list;
         let (shuffle, repeat) = (list.shuffle, list.repeat);
         let size = vec2(ADD_BUTTON_SIZE, ADD_BUTTON_SIZE);
 
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
             let (clicked, active, hover) =
-                widgets::toggle_button(ui, rect, "shuffle", shuffle, t().shuffle);
+                components::toggle_button(ui, rect, "shuffle", shuffle, t().shuffle);
             paint_shuffle(ui, rect, active, hover);
             if clicked {
-                self.controller.toggle_shuffle();
+                self.dispatch(Action::ToggleShuffle);
             }
 
             // Повторы прижаты вправо. Включена может быть только одна из кнопок —
@@ -134,10 +113,10 @@ impl PlayerApp {
                 ] {
                     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
                     let (clicked, active, hover) =
-                        widgets::toggle_button(ui, rect, id_salt, repeat == mode, tooltip);
+                        components::toggle_button(ui, rect, id_salt, repeat == mode, tooltip);
                     paint_repeat(ui, rect, mode == RepeatMode::One, active, hover);
                     if clicked {
-                        self.controller.toggle_repeat(mode);
+                        self.dispatch(Action::ToggleRepeat(mode));
                     }
                 }
             });

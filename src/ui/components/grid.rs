@@ -11,7 +11,7 @@ use eframe::egui::{
 use std::collections::BTreeSet;
 
 use super::selection::{Marquee, Selection};
-use crate::ui::theme::{
+use crate::ui::style::theme::{
     HIGHLIGHT_STRONG, HOVER_FADE_SECS, MARQUEE_FILL, MARQUEE_STROKE, SELECTION_STROKE_WIDTH, TEXT,
     TEXT_MUTED,
 };

@@ -4,6 +4,7 @@ mod banners;
 mod buttons;
 mod cover;
 mod dialog;
+mod format;
 mod grid;
 mod layout;
 mod menu;
@@ -17,6 +18,7 @@ pub use banners::{BANNER_GAP, BANNER_TOP, error_banner, loading_banner};
 pub use buttons::{ButtonStyle, HitShape, icon_button, pill_button, toggle_button};
 pub use cover::{backdrop_shape, paint_cover};
 pub use dialog::{Confirm, confirm_dialog, modal};
+pub use format::format_secs;
 pub use grid::{Tile, TileGridView, TileLine};
 pub use layout::{
     block_title, block_title_with_note, breadcrumb_title, paint_resize_line, text_link,

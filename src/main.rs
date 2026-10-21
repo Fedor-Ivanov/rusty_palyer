@@ -2,9 +2,7 @@
 // В отладочной консоль остаётся — в неё пишутся ошибки
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
-mod library;
-mod playback;
-mod settings;
+mod core;
 mod ui;
 
 use eframe::egui;
@@ -38,7 +36,7 @@ fn main() -> eframe::Result {
         options,
         Box::new(|cc| {
             cc.egui_ctx.set_theme(egui::Theme::Dark);
-            if let Err(e) = ui::window_glass::apply(cc) {
+            if let Err(e) = ui::style::window_glass::apply(cc) {
                 eprintln!("Could not enable the window blur: {e}");
             }
             Ok(Box::new(ui::PlayerApp::new(cc)))

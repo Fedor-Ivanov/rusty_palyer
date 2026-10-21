@@ -8,8 +8,8 @@ use eframe::egui::{
 use super::buttons::{HitShape, icon_button};
 use crate::ui::{
     i18n::t,
-    icons::{paint_clear, paint_search},
-    theme::{HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, TEXT, TEXT_FAINT, TEXT_MUTED},
+    style::icons::{paint_clear, paint_search},
+    style::theme::{HIGHLIGHT, HIGHLIGHT_STRONG, HOVER_FADE_SECS, TEXT, TEXT_FAINT, TEXT_MUTED},
 };
 
 /// Ширина поля; в узкой области — не больше `SEARCH_MAX_SHARE` ширины строки

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{fs, io::ErrorKind, path::PathBuf};
 
 use super::playlist::TrackList;
-use crate::library::write_atomically;
+use crate::core::storage::write_atomically;
 
 const FILE_NAME: &str = "playlist.json";
 const FORMAT_VERSION: u32 = 1;
@@ -69,8 +69,8 @@ impl PlaylistStore {
 mod tests {
     use super::PlaylistStore;
     use crate::{
-        library::Track,
-        playback::{RepeatMode, playlist::TrackList},
+        core::library::Track,
+        core::playback::{RepeatMode, playlist::TrackList},
     };
     use std::{fs, path::PathBuf};
 

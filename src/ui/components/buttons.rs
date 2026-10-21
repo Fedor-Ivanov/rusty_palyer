@@ -2,7 +2,7 @@
 
 use eframe::egui::{self, Align2, CursorIcon, FontId, Pos2, Rect, Response, Sense, Ui, vec2};
 
-use crate::ui::theme::{
+use crate::ui::style::theme::{
     DESTRUCTIVE_BUTTON_FILL, DESTRUCTIVE_BUTTON_HOVER, HIGHLIGHT_STRONG, HOVER_FADE_SECS,
     PRIMARY_BUTTON_FILL, PRIMARY_BUTTON_HOVER, PRIMARY_BUTTON_TEXT, SECONDARY_BUTTON_HOVER, TEXT,
     TRACK_ACTIVE_FADE_SECS,

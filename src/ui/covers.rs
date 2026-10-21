@@ -16,7 +16,7 @@ use std::{
     time::Duration,
 };
 
-use crate::library::metadata::read_cover;
+use crate::core::library::metadata::read_cover;
 
 /// Сколько обложек держать: миниатюра ~400 КБ, итого до ~120 МБ видеопамяти
 const MAX_COVERS: usize = 300;

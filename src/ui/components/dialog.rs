@@ -5,7 +5,7 @@ use eframe::egui::{self, Align, Id, Label, Layout, RichText, Stroke};
 use super::buttons::{ButtonStyle, pill_button};
 use crate::ui::{
     i18n::t,
-    theme::{BANNER_BORDER, BANNER_FILL, MODAL_BACKDROP, TEXT, TEXT_MUTED},
+    style::theme::{BANNER_BORDER, BANNER_FILL, MODAL_BACKDROP, TEXT, TEXT_MUTED},
 };
 
 const DIALOG_WIDTH: f32 = 360.0;

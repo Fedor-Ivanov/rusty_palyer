@@ -15,7 +15,7 @@ use super::{
     audio::{self, AudioCmd, AudioEvent},
     playlist::{RepeatMode, TrackList},
 };
-use crate::library::Track;
+use crate::core::library::Track;
 
 #[derive(Serialize, Debug, Clone, Copy, PartialEq)]
 pub enum PlayerState {

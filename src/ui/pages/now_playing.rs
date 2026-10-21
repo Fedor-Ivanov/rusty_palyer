@@ -3,21 +3,22 @@
 
 use eframe::egui::{self, CursorIcon, Id, Rect, RichText, Sense, Shape, Ui, pos2, vec2};
 
-use super::{
-    PlayerApp,
-    loading::Destination,
-    route::{AlbumKey, Route},
-};
-use crate::library::{
-    Track,
-    groups::{self, AlbumGroup},
-};
-use crate::ui::{
-    covers::{Cover, CoverSize},
-    format::format_secs,
-    i18n::t,
-    theme::{TEXT, TEXT_MUTED, TRACK_BACKDROP_FADE_SECS},
-    widgets,
+use crate::{
+    core::library::{
+        Track,
+        groups::{self, AlbumGroup},
+    },
+    ui::action::Action,
+    ui::{
+        app::PlayerApp,
+        components,
+        components::format_secs,
+        covers::{Cover, CoverSize},
+        i18n::t,
+        loading::Destination,
+        navigation::{AlbumKey, Route},
+        style::theme::{TEXT, TEXT_MUTED, TRACK_BACKDROP_FADE_SECS},
+    },
 };
 use std::path::PathBuf;
 
@@ -30,7 +31,7 @@ const BACKDROP_FADE_ABOVE: f32 = 120.0;
 
 impl PlayerApp {
     /// Кнопка по центру всего оставшегося места
-    pub(super) fn render_add_tracks_block(&mut self, ui: &mut Ui) {
+    pub(crate) fn render_add_tracks_block(&mut self, ui: &mut Ui) {
         let text = RichText::new(t().open_files).size(18.0).color(TEXT);
 
         // Layout в egui не центрирует по вертикали, поэтому считаем размер кнопки
@@ -54,7 +55,7 @@ impl PlayerApp {
             .on_hover_text(t().open_files)
             .clicked()
         {
-            self.add_files(Destination::Playlist);
+            self.dispatch(Action::AddFiles(Destination::Playlist));
         }
     }
 
@@ -63,8 +64,8 @@ impl PlayerApp {
     /// растворяться и к низу окна исчезает: без резкой границы с панелью управления.
     /// У каждого трека своё проявление — при смене трека новый фон плавно появляется, когда
     /// готов. Возвращает фигуру: её кладут под панели (см. `ui`), а не поверх них
-    pub(super) fn track_backdrop(&mut self, ui: &Ui) -> Option<Shape> {
-        let track = self.controller.player().current_track.clone()?;
+    pub(crate) fn track_backdrop(&mut self, ui: &Ui) -> Option<Shape> {
+        let track = self.state.controller.player().current_track.clone()?;
         let path = track.path.clone();
         let candidates = self.cover_candidates(&track);
         let cover = self.covers.get(&candidates, CoverSize::Backdrop);
@@ -78,7 +79,7 @@ impl PlayerApp {
             content.min,
             pos2(content.right(), ui.ctx().content_rect().bottom()),
         );
-        widgets::backdrop_shape(
+        components::backdrop_shape(
             rect,
             content.bottom() - BACKDROP_FADE_ABOVE,
             cover,
@@ -99,18 +100,18 @@ impl PlayerApp {
     /// Альбом трека в библиотеке — ищется так же, как при группировке: без учёта регистра,
     /// пустое имя — «Unknown …»
     fn track_album(&mut self, track: &Track) -> Option<&AlbumGroup> {
-        self.refresh_groups();
+        self.state.refresh_groups();
         let artist_key = groups::album_artist(track).to_lowercase();
         let album_key = normalized_name(&track.album, groups::UNKNOWN_ALBUM);
-        self.groups.albums.iter().find(|album| {
+        self.state.groups.albums.iter().find(|album| {
             album.title.to_lowercase() == album_key && album.artist.to_lowercase() == artist_key
         })
     }
 
     /// Детали текущего трека: название, исполнитель и альбом (ссылки — если они есть
     /// в библиотеке), длительность; ниже — обложка по центру свободного места
-    pub(super) fn render_current_track_info(&mut self, ui: &mut Ui) {
-        let Some(track) = self.controller.player().current_track.clone() else {
+    pub(crate) fn render_current_track_info(&mut self, ui: &mut Ui) {
+        let Some(track) = self.state.controller.player().current_track.clone() else {
             return;
         };
         // Исполнитель и альбом трека в библиотеке — ищутся так же, как при группировке
@@ -118,6 +119,7 @@ impl PlayerApp {
         // Ссылка ведёт к исполнителю альбома: «Angèle; Kiddy Smile» — к Angèle
         let artist_key = groups::album_artist(&track).to_lowercase();
         let artist_in_library = self
+            .state
             .groups
             .artists
             .iter()
@@ -131,9 +133,10 @@ impl PlayerApp {
             ui.label(RichText::new(&track.title).size(DETAILS_SIZE).color(TEXT));
             if !track.artist.is_empty() {
                 if artist_in_library.is_some() {
-                    open_artist = widgets::text_link(ui, &track.artist, DETAILS_SIZE, TEXT_MUTED)
-                        .on_hover_text(t().show_artist)
-                        .clicked();
+                    open_artist =
+                        components::text_link(ui, &track.artist, DETAILS_SIZE, TEXT_MUTED)
+                            .on_hover_text(t().show_artist)
+                            .clicked();
                 } else {
                     ui.label(
                         RichText::new(&track.artist)
@@ -144,7 +147,7 @@ impl PlayerApp {
             }
             if !track.album.is_empty() {
                 if album_in_library.is_some() {
-                    open_album = widgets::text_link(ui, &track.album, DETAILS_SIZE, TEXT_MUTED)
+                    open_album = components::text_link(ui, &track.album, DETAILS_SIZE, TEXT_MUTED)
                         .on_hover_text(t().show_album)
                         .clicked();
                 } else {
@@ -168,7 +171,7 @@ impl PlayerApp {
             let side = free.width().min(free.height()).clamp(0.0, COVER_MAX_SIZE);
             ui.allocate_rect(free, Sense::hover());
             let cover = self.covers.get(&cover_candidates, CoverSize::Large);
-            widgets::paint_cover(
+            components::paint_cover(
                 ui,
                 Rect::from_center_size(free.center(), vec2(side, side)),
                 cover,
@@ -177,18 +180,18 @@ impl PlayerApp {
         });
 
         if open_artist && let Some(artist) = artist_in_library {
-            self.navigate(Route::Artist(artist));
+            self.dispatch(Action::Navigate(Route::Artist(artist)));
         } else if open_album && let Some(album) = album_in_library {
-            self.navigate(Route::Album(album));
+            self.dispatch(Action::Navigate(Route::Album(album)));
         }
     }
 
     /// Плашка текущего трека внизу центральной области. Возвращает `true`, если по ней кликнули
-    pub(super) fn render_now_playing_bar(&mut self, ui: &mut Ui) -> bool {
-        let Some(track) = &self.controller.player().current_track else {
+    pub(crate) fn render_now_playing_bar(&mut self, ui: &mut Ui) -> bool {
+        let Some(track) = &self.state.controller.player().current_track else {
             return false;
         };
-        widgets::now_playing_bar(ui, &track.title, &track.artist)
+        components::now_playing_bar(ui, &track.title, &track.artist)
             .on_hover_text(t().show_current_track)
             .clicked()
     }

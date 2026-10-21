@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, io::ErrorKind, path::PathBuf};
 
-use crate::{library::write_atomically, playback::Volume};
+use crate::{core::playback::Volume, core::storage::write_atomically};
 
 const FILE_NAME: &str = "settings.json";
 
@@ -110,7 +110,7 @@ impl SettingsStore {
 #[cfg(test)]
 mod tests {
     use super::{Language, Settings, SettingsStore};
-    use crate::playback::Volume;
+    use crate::core::playback::Volume;
     use std::fs;
 
     #[test]
