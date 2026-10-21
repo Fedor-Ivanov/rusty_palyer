@@ -2034,6 +2034,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
+name = "lmp"
+version = "0.1.0"
+dependencies = [
+ "eframe",
+ "egui",
+ "encoding_rs",
+ "fastrand",
+ "image",
+ "lofty",
+ "objc2 0.6.5",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "raw-window-handle",
+ "rfd",
+ "rodio",
+ "serde",
+ "serde_json",
+ "souvlaki",
+ "symphonia 0.6.1",
+ "window-vibrancy",
+ "winresource",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3378,30 +3402,6 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
-
-[[package]]
-name = "rusty_player"
-version = "0.1.0"
-dependencies = [
- "eframe",
- "egui",
- "encoding_rs",
- "fastrand",
- "image",
- "lofty",
- "objc2 0.6.5",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
- "raw-window-handle",
- "rfd",
- "rodio",
- "serde",
- "serde_json",
- "souvlaki",
- "symphonia 0.6.1",
- "window-vibrancy",
- "winresource",
-]
 
 [[package]]
 name = "same-file"

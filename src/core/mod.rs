@@ -293,7 +293,7 @@ mod tests {
 
     /// Состояние в новой пустой временной папке
     fn new_core() -> (Core, PathBuf) {
-        let dir = std::env::temp_dir().join(format!("rusty_player_core_{}", fastrand::u64(..)));
+        let dir = std::env::temp_dir().join(format!("lmp_core_{}", fastrand::u64(..)));
         let (core, error) = Core::load(Some(dir.clone()), || {});
         assert!(error.is_none(), "{error:?}");
         (core, dir)

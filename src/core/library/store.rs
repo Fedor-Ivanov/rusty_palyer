@@ -245,7 +245,7 @@ mod tests {
 
     #[test]
     fn saves_loads_dedupes_and_marks_missing() {
-        let dir = std::env::temp_dir().join(format!("rusty_player_library_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lmp_library_{}", std::process::id()));
         let music = dir.join("music");
         fs::create_dir_all(&music).unwrap();
         let [a, b, c] = ["a", "b", "c"].map(|name| music.join(format!("{name}.mp3")));
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn old_library_is_refreshed_once() {
-        let dir = std::env::temp_dir().join(format!("rusty_player_v1_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lmp_v1_{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("a.mp3");
         // Библиотека в формате 1: у трека нет года
@@ -311,7 +311,7 @@ mod tests {
 
     #[test]
     fn damaged_file_is_set_aside() {
-        let dir = std::env::temp_dir().join(format!("rusty_player_damaged_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lmp_damaged_{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("library.json"), "not json").unwrap();
 

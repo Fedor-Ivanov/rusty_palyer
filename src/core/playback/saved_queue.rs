@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn saves_and_loads_playlist() {
-        let dir = std::env::temp_dir().join(format!("rusty_player_playlist_{}", fastrand::u64(..)));
+        let dir = std::env::temp_dir().join(format!("lmp_playlist_{}", fastrand::u64(..)));
         let list = TrackList {
             tracks: vec![Track {
                 path: PathBuf::from("/music/a.mp3"),

@@ -159,7 +159,7 @@ mod tests {
 
     /// Новая пустая временная папка с файлами `names`; содержимое файла — его имя
     fn folder(names: &[&str]) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("rusty_player_cover_{}", fastrand::u64(..)));
+        let dir = std::env::temp_dir().join(format!("lmp_cover_{}", fastrand::u64(..)));
         fs::create_dir_all(&dir).unwrap();
         for name in names {
             fs::write(dir.join(name), name).unwrap();

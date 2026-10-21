@@ -92,7 +92,7 @@ mod tests {
 
     #[test]
     fn finds_audio_files_recursively() {
-        let dir = std::env::temp_dir().join(format!("rusty_player_test_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lmp_test_{}", std::process::id()));
         fs::create_dir_all(dir.join("CD2")).unwrap();
         for name in ["b.mp3", "a.FLAC", "cover.jpg", "CD2/c.ogg", "CD2/notes.txt"] {
             fs::write(dir.join(name), b"").unwrap();

@@ -1,11 +1,11 @@
-; Установщик Rusty Player для Windows (NSIS).
+; Установщик LMP для Windows (NSIS).
 ;
 ; Сборка (можно на macOS: brew install makensis):
 ;   cargo build --release --target x86_64-pc-windows-gnu
 ;   mkdir -p target/installer
 ;   makensis -DVERSION=0.1.0 installer/windows.nsi
 ;
-; Результат: target/installer/Rusty Player Setup 0.1.0.exe
+; Результат: target/installer/LMP Setup 0.1.0.exe
 
 Unicode true
 !include "MUI2.nsh"
@@ -14,11 +14,11 @@ Unicode true
   !define VERSION "0.1.0"
 !endif
 
-!define APP_NAME "Rusty Player"
-!define APP_EXE "rusty_player.exe"
+!define APP_NAME "LMP"
+!define APP_EXE "lmp.exe"
 !define PUBLISHER "Fedor Ivanov"
 ; Ключ в реестре для «Установка и удаление программ»
-!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\RustyPlayer"
+!define UNINSTALL_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\LMP"
 
 ; Пути считаются от папки скрипта
 !define ROOT ".."
@@ -44,7 +44,7 @@ VIAddVersionKey "LegalCopyright" "${PUBLISHER}"
 !define MUI_ICON "${APP_ICON}"
 !define MUI_UNICON "${APP_ICON}"
 !define MUI_ABORTWARNING
-; На последней странице — галочка «Запустить Rusty Player»
+; На последней странице — галочка «Запустить LMP»
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
 
 !insertmacro MUI_PAGE_WELCOME

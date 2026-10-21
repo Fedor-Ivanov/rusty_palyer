@@ -1,4 +1,4 @@
-# Rusty Player
+# LMP
 
 An audio player for macOS and Windows, written in Rust with [egui](https://github.com/emilk/egui) / eframe.
 Plays MP3, FLAC, WAV, OGG, M4A and AAC, with a track list, shuffle, repeat one / repeat all,
@@ -31,8 +31,8 @@ cargo bundle --release
 
 Output:
 
-- `target/release/bundle/osx/Rusty Player.app` — the app itself;
-- `target/release/bundle/dmg/Rusty Player.dmg` — disk image for distribution: it contains
+- `target/release/bundle/osx/LMP.app` — the app itself;
+- `target/release/bundle/dmg/LMP.dmg` — disk image for distribution: it contains
   the app and a shortcut to the Applications folder, so you install by dragging the app there.
 
 The build is Apple Silicon (arm64) only.
@@ -47,8 +47,8 @@ makensis -DVERSION=0.1.0 installer/windows.nsi         # the installer
 
 Output:
 
-- `target/x86_64-pc-windows-gnu/release/rusty_player.exe` — the app, runs without installation;
-- `target/installer/Rusty Player Setup 0.1.0.exe` — the installer: installs into Program Files,
+- `target/x86_64-pc-windows-gnu/release/lmp.exe` — the app, runs without installation;
+- `target/installer/LMP Setup 0.1.0.exe` — the installer: installs into Program Files,
   creates Start menu shortcuts and an optional desktop shortcut, and registers the app
   in "Apps & features" so it can be uninstalled.
 

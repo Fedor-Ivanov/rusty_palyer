@@ -234,8 +234,7 @@ mod tests {
 
     #[test]
     fn crud_survives_restart() {
-        let dir =
-            std::env::temp_dir().join(format!("rusty_player_playlists_{}", fastrand::u64(..)));
+        let dir = std::env::temp_dir().join(format!("lmp_playlists_{}", fastrand::u64(..)));
         let (mut playlists, error) = Playlists::load(Some(dir.clone()));
         assert!(error.is_none());
 

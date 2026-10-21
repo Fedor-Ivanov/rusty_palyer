@@ -25,7 +25,7 @@ const POSITION_DRIFT: Duration = Duration::from_millis(1500);
 /// Шаг перемотки кнопками ⏪ ⏩ (они есть на Windows)
 const SEEK_STEP: Duration = Duration::from_secs(10);
 /// Файл обложки во временной папке: система принимает обложку только ссылкой
-const COVER_FILE: &str = "rusty-player-now-playing-cover";
+const COVER_FILE: &str = "lmp-now-playing-cover";
 
 pub(crate) struct SystemMedia {
     /// `None` — система не дала подключиться: приложение работает и без медиа-кнопок
@@ -63,7 +63,7 @@ impl SystemMedia {
         let ctx = cc.egui_ctx.clone();
         let controls = MediaControls::new(PlatformConfig {
             display_name: crate::APP_NAME,
-            dbus_name: "rusty_player",
+            dbus_name: "lmp",
             hwnd: window_handle(cc),
         })
         .and_then(|mut controls| {

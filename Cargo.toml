@@ -1,12 +1,12 @@
 [package]
-name = "rusty_player"
+name = "lmp"
 version = "0.1.0"
 edition = "2024"
 
 # Сборка macOS-приложения: cargo bundle --release
 [package.metadata.bundle]
-name = "Rusty Player"
-identifier = "com.fedor-ivanov.rusty-player"
+name = "LMP"
+identifier = "com.fedor-ivanov.lmp"
 icon = ["assets/images/AppIcon.icns"]
 category = "public.app-category.music"
 short_description = "Audio player"

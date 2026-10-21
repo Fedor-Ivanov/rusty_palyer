@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn loads_folder_in_order_and_reports_errors() {
-        let dir = std::env::temp_dir().join(format!("rusty_player_loader_{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lmp_loader_{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let names: Vec<String> = (0..40).map(|i| format!("{i:02}.wav")).collect();
         for name in &names {

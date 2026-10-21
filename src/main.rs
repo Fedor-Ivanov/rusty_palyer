@@ -8,7 +8,7 @@ mod ui;
 use eframe::egui;
 
 /// Имя приложения: заголовок окна и имя папки с данными (библиотекой)
-pub const APP_NAME: &str = "Rusty Player";
+pub const APP_NAME: &str = "LMP";
 
 fn main() -> eframe::Result {
     // Иконка вшивается в бинарник при сборке, отдельный файл рядом не нужен.

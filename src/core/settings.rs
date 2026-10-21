@@ -171,7 +171,7 @@ mod tests {
 
     #[test]
     fn saves_loads_and_fills_missing_fields() {
-        let dir = std::env::temp_dir().join(format!("rusty_player_settings_{}", fastrand::u64(..)));
+        let dir = std::env::temp_dir().join(format!("lmp_settings_{}", fastrand::u64(..)));
 
         let (mut store, mut settings, error) = SettingsStore::load(Some(dir.clone()));
         assert!(error.is_none());
