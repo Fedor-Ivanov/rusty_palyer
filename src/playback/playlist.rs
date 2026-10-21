@@ -116,6 +116,7 @@ mod tests {
                     path: PathBuf::from(format!("{i}.mp3")),
                     title: i.to_string(),
                     artist: String::new(),
+                    album_artist: String::new(),
                     duration_secs: 0,
                     year: None,
                     track_number: None,

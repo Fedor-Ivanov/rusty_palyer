@@ -52,6 +52,15 @@ pub const DESTRUCTIVE_BUTTON_FILL: Color32 = Color32::from_rgb(0xD9, 0x3F, 0x3F)
 pub const DESTRUCTIVE_BUTTON_HOVER: Color32 = Color32::from_rgb(0xB8, 0x32, 0x32);
 /// Затемнение окна под модальным диалогом
 pub const MODAL_BACKDROP: Color32 = Color32::from_black_alpha(120);
+
+// Фон деталей текущего трека — его размытая обложка: непрозрачность обложки (стекло окна
+// под ней остаётся видно) и затемнение поверх неё ради читаемости текста — сильнее сверху,
+// где текст, слабее внизу
+pub const TRACK_BACKDROP_OPACITY: f32 = 0.55;
+pub const TRACK_BACKDROP_SHADE_TOP: Color32 = Color32::from_black_alpha(150);
+pub const TRACK_BACKDROP_SHADE_BOTTOM: Color32 = Color32::from_black_alpha(70);
+/// Проявление фона, когда размытая обложка готова
+pub const TRACK_BACKDROP_FADE_SECS: f32 = 0.4;
 /// Второстепенная кнопка в покое — HIGHLIGHT_STRONG, при наведении — светлее
 pub const SECONDARY_BUTTON_HOVER: Color32 = Color32::from_rgba_premultiplied(66, 66, 66, 66);
 

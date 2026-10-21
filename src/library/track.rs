@@ -8,6 +8,10 @@ pub struct Track {
     pub path: PathBuf,
     pub title: String,
     pub artist: String,
+    /// Исполнитель альбома из тегов (Album Artist); пусто, если его нет. В старых файлах
+    /// библиотеки поля нет — тогда пусто
+    #[serde(default)]
+    pub album_artist: String,
     pub duration_secs: u64,
     pub album: String,
     /// Год из тегов. В старых файлах библиотеки поля нет — тогда `None`
@@ -31,6 +35,7 @@ impl Track {
             path,
             title: meta.title,
             artist: meta.artist,
+            album_artist: meta.album_artist,
             album: meta.album,
             duration_secs: meta.duration_secs,
             year: meta.year,

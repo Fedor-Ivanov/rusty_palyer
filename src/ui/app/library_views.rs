@@ -417,11 +417,11 @@ impl PlayerApp {
             return;
         };
         let indices = album.tracks.clone();
-        let (title, artist, year, cover_from) = (
+        let (title, artist, year, cover_candidates) = (
             album.title.clone(),
             album.artist.clone(),
             album.year,
-            album.cover_from.clone(),
+            album.cover_candidates.clone(),
         );
 
         // ---- шапка
@@ -441,7 +441,7 @@ impl PlayerApp {
                         vec2(ALBUM_PAGE_COVER_SIZE, ALBUM_PAGE_COVER_SIZE),
                         Sense::hover(),
                     );
-                    let cover = self.covers.get(&cover_from, CoverSize::Large);
+                    let cover = self.covers.get(&cover_candidates, CoverSize::Large);
                     widgets::paint_cover(ui, cover_rect, cover, TILE_RADIUS);
                     ui.add_space(20.0);
 
@@ -612,7 +612,7 @@ impl PlayerApp {
             self.focus == ListFocus::Grid,
             |ui, index, image_rect, tile| {
                 let album = albums[index];
-                let cover = covers.get(&album.cover_from, CoverSize::Thumbnail);
+                let cover = covers.get(&album.cover_candidates, CoverSize::Thumbnail);
                 widgets::paint_cover(ui, image_rect, cover, TILE_RADIUS);
 
                 // Кнопка play в левом верхнем углу обложки — проявляется при наведении на плитку

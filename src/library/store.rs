@@ -11,9 +11,10 @@ use std::{
 use super::Track;
 
 const FILE_NAME: &str = "library.json";
-/// Версия формата файла. 2 — в треках появился год, 3 — номера трека и диска: библиотеку
-/// старой версии нужно один раз перечитать из тегов (см. `outdated_paths`)
-const FORMAT_VERSION: u32 = 3;
+/// Версия формата файла. 2 — в треках появился год, 3 — номера трека и диска,
+/// 4 — исполнитель альбома: библиотеку старой версии нужно один раз перечитать из тегов
+/// (см. `outdated_paths`)
+const FORMAT_VERSION: u32 = 4;
 
 #[derive(Serialize, Deserialize)]
 struct Stored {
@@ -203,6 +204,7 @@ mod tests {
             path: path.to_path_buf(),
             title: path.file_stem().unwrap().to_string_lossy().into_owned(),
             artist: "Artist".into(),
+            album_artist: String::new(),
             duration_secs: 60,
             year: None,
             track_number: None,

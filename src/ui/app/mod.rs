@@ -283,6 +283,11 @@ impl eframe::App for PlayerApp {
         // Тонировка системного размытия — первой, под всеми панелями. Других заливок у панелей
         // нет: стекло по всему окну одного цвета
         ui.painter().rect_filled(ui.max_rect(), 0, WINDOW_TINT);
+        // Место под фон Now Playing — сразу над тонировкой, под всеми панелями. Сам фон
+        // известен, только когда дойдём до центральной области, а заходит он и под панель
+        // управления, нарисованную раньше, — поэтому место занимаем заранее
+        let root_painter = ui.painter().clone();
+        let backdrop_slot = root_painter.add(egui::Shape::Noop);
 
         // У CentralPanel нет своей минимальной ширины — он получает остаток после боковых
         // панелей. Поэтому минимум обеспечивают их максимумы: каждая может занять только то,
@@ -400,6 +405,9 @@ impl eframe::App for PlayerApp {
 
                 match self.view {
                     CentralView::NowPlaying => {
+                        if let Some(backdrop) = self.track_backdrop(ui) {
+                            root_painter.set(backdrop_slot, backdrop);
+                        }
                         egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
                             ui.vertical_centered_justified(|ui| {
                                 if self.controller.player().track_list.tracks.is_empty() {

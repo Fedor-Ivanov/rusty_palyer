@@ -4,7 +4,7 @@ use lofty::{
     config::ParseOptions,
     file::{AudioFile, TaggedFileExt},
     probe::Probe,
-    tag::Accessor,
+    tag::{Accessor, ItemKey},
 };
 use std::path::Path;
 
@@ -12,6 +12,9 @@ use std::path::Path;
 pub struct FileMetadata {
     pub title: String,
     pub artist: String,
+    /// Исполнитель альбома (Album Artist) — по нему треки собираются в альбомы. Пусто,
+    /// если в тегах его нет
+    pub album_artist: String,
     pub album: String,
     pub duration_secs: u64,
     pub year: Option<u16>,
@@ -44,6 +47,10 @@ pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
         .and_then(|t| t.artist().map(|s| fix_cp1251(&s)))
         .unwrap_or_default();
 
+    let album_artist = tag
+        .and_then(|t| t.get_string(ItemKey::AlbumArtist).map(fix_cp1251))
+        .unwrap_or_default();
+
     let album = tag
         .and_then(|t| t.album().map(|s| fix_cp1251(&s)))
         .unwrap_or_default();
@@ -58,6 +65,7 @@ pub fn get_file_metadata(path: &Path) -> Result<FileMetadata, String> {
     Ok(FileMetadata {
         title,
         artist,
+        album_artist,
         album,
         duration_secs,
         year,

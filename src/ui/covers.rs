@@ -28,6 +28,9 @@ pub enum CoverSize {
     Thumbnail,
     /// Обложка текущего трека
     Large,
+    /// Размытая обложка — фон деталей текущего трека. Маленькая: при растягивании на всю
+    /// область линейная фильтрация сама сглаживает её
+    Backdrop,
 }
 
 impl CoverSize {
@@ -36,11 +39,18 @@ impl CoverSize {
         match self {
             Self::Thumbnail => 320,
             Self::Large => 640,
+            Self::Backdrop => 128,
         }
     }
 }
 
+/// Сила размытия фона: сигма Гаусса в пикселях обложки `CoverSize::Backdrop`
+const BACKDROP_BLUR_SIGMA: f32 = 8.0;
+
+/// Обложка в кэше — по первому из файлов-кандидатов и размеру
 type Key = (PathBuf, CoverSize);
+/// Заказ потоку: ключ и файлы, в тегах которых искать обложку, по порядку
+type Request = (Key, Vec<PathBuf>);
 const WORKERS: usize = 2;
 
 pub enum Cover<'a> {
@@ -63,7 +73,7 @@ enum Entry {
 }
 
 pub struct CoverCache {
-    requests: Sender<Key>,
+    requests: Sender<Request>,
     results: Receiver<(Key, Option<ColorImage>)>,
     entries: HashMap<Key, Entry>,
     /// Номер кадра — для вытеснения давно не показанных миниатюр
@@ -72,7 +82,7 @@ pub struct CoverCache {
 
 impl CoverCache {
     pub fn new() -> Self {
-        let (requests, request_rx) = mpsc::channel::<Key>();
+        let (requests, request_rx) = mpsc::channel::<Request>();
         let (result_tx, results) = mpsc::channel();
         // Потоки делят одну очередь запросов
         let request_rx = Arc::new(Mutex::new(request_rx));
@@ -83,10 +93,11 @@ impl CoverCache {
                     let Ok(key) = request_rx.lock().map(|rx| rx.recv()) else {
                         break;
                     };
-                    let Ok(key) = key else {
+                    let Ok((key, candidates)) = key else {
                         break;
                     };
-                    let image = load_cover(&key.0, key.1.pixels());
+                    // Первый файл, в тегах которого обложка есть: обычно это первый же
+                    let image = candidates.iter().find_map(|path| load_cover(path, key.1));
                     if result_tx.send((key, image)).is_err() {
                         break;
                     }
@@ -101,13 +112,18 @@ impl CoverCache {
         }
     }
 
-    /// Обложка из тегов файла `path` размера `size`. Если её ещё нет — заказывает чтение в фоне
-    pub fn get(&mut self, path: &Path, size: CoverSize) -> Cover<'_> {
+    /// Обложка размера `size` из тегов первого из `candidates`, где она есть: обложка
+    /// альбома бывает только у части его треков. Если её ещё нет — заказывает чтение в фоне.
+    /// В кэше обложка хранится по первому кандидату
+    pub fn get(&mut self, candidates: &[PathBuf], size: CoverSize) -> Cover<'_> {
+        let Some(first) = candidates.first() else {
+            return Cover::Missing;
+        };
         let frame = self.frame;
-        let key = (path.to_path_buf(), size);
+        let key = (first.clone(), size);
         if !self.entries.contains_key(&key) {
             self.entries.insert(key.clone(), Entry::Loading);
-            let _ = self.requests.send(key.clone());
+            let _ = self.requests.send((key.clone(), candidates.to_vec()));
         }
         match self.entries.get_mut(&key) {
             Some(Entry::Ready { texture, last_used }) => {
@@ -177,13 +193,18 @@ impl CoverCache {
     }
 }
 
-/// Обложка из тегов, уменьшенная так, чтобы большая сторона была не больше `pixels`
-fn load_cover(path: &Path, pixels: u32) -> Option<ColorImage> {
+/// Обложка из тегов, уменьшенная так, чтобы большая сторона была не больше
+/// `size.pixels()`; для фона — ещё и размытая
+fn load_cover(path: &Path, size: CoverSize) -> Option<ColorImage> {
     let bytes = read_cover(path)?;
-    let image = image::load_from_memory(&bytes)
+    let pixels = size.pixels();
+    let mut image = image::load_from_memory(&bytes)
         .ok()?
         .thumbnail(pixels, pixels)
         .to_rgba8();
+    if size == CoverSize::Backdrop {
+        image = image::imageops::blur(&image, BACKDROP_BLUR_SIGMA);
+    }
     let size = [image.width() as usize, image.height() as usize];
     Some(ColorImage::from_rgba_unmultiplied(size, image.as_raw()))
 }

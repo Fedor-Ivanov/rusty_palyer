@@ -82,6 +82,7 @@ mod tests {
                 path: PathBuf::from("/music/a.mp3"),
                 title: "A".into(),
                 artist: "Artist".into(),
+                album_artist: String::new(),
                 duration_secs: 60,
                 year: None,
                 track_number: None,
