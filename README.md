@@ -16,11 +16,16 @@ Both builds are made on macOS, including the Windows one, which is cross-compile
 
 ### Prerequisites
 
+- `cargo-bundle` — builds the `.app` and `.dmg`;
+- the `x86_64-pc-windows-gnu` target and MinGW — build the Windows `.exe`
+  (the linker is set in `.cargo/config.toml`);
+- `makensis` — builds the Windows installer.
+
 ```sh
-cargo install cargo-bundle                    # builds the .app and .dmg
-rustup target add x86_64-pc-windows-gnu       # Windows target
-brew install mingw-w64                        # Windows linker (see .cargo/config.toml)
-brew install makensis                         # Windows installer
+cargo install cargo-bundle
+rustup target add x86_64-pc-windows-gnu
+brew install mingw-w64
+brew install makensis
 ```
 
 ### macOS
@@ -39,10 +44,12 @@ The build is Apple Silicon (arm64) only.
 
 ### Windows
 
+First the app, then the installer from it:
+
 ```sh
-cargo build --release --target x86_64-pc-windows-gnu   # the app
+cargo build --release --target x86_64-pc-windows-gnu
 mkdir -p target/installer
-makensis -DVERSION=0.1.0 installer/windows.nsi         # the installer
+makensis -DVERSION=0.1.0 installer/windows.nsi
 ```
 
 Output:
