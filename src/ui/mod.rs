@@ -20,6 +20,8 @@ mod loading;
 mod navigation;
 mod pages;
 mod panels;
+mod shortcuts;
 pub mod style;
+mod system_media;
 
 pub use app::PlayerApp;

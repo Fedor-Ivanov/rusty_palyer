@@ -80,7 +80,7 @@ impl PlayerApp {
 
     /// Где искать обложку трека: сначала в нём самом (у треков сборника картинки бывают
     /// разные), потом в остальных треках его альбома — обложка бывает не у всех
-    fn cover_candidates(&mut self, track: &Track) -> Vec<PathBuf> {
+    pub(crate) fn cover_candidates(&mut self, track: &Track) -> Vec<PathBuf> {
         let mut candidates = vec![track.path.clone()];
         if let Some(album) = self.track_album(track) {
             candidates.extend(album.cover_candidates.iter().cloned());

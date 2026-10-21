@@ -18,6 +18,7 @@ use super::{
     navigation::Route,
     pages::LibrarySearch,
     style::theme::WINDOW_TINT,
+    system_media::SystemMedia,
 };
 use crate::core::{Core, library::loader::Source, playback::PlayerState, playlists::PlaylistId};
 
@@ -77,6 +78,8 @@ pub struct PlayerApp {
     /// Обложка и фон текущего трека: плавная смена при переключении трека
     pub(crate) cover_fade: CoverFade,
     pub(crate) backdrop_fade: CoverFade,
+    /// Системные медиа-кнопки и показ текущего трека системе
+    pub(crate) system_media: SystemMedia,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -129,6 +132,7 @@ impl PlayerApp {
             covers: CoverCache::new(),
             cover_fade: CoverFade::default(),
             backdrop_fade: CoverFade::default(),
+            system_media: SystemMedia::new(cc),
         };
         // Библиотека сохранена старым форматом — один раз перечитываем её теги в фоне
         if let Some(paths) = outdated {
@@ -175,12 +179,16 @@ impl eframe::App for PlayerApp {
         if self.core.controller.poll_events() {
             self.dispatch(Action::TrackEnded);
         }
+        // Медиа-кнопки — тоже здесь: они работают, и когда окно не видно
+        self.poll_system_media();
         self.poll_loaders(ctx);
         self.apply_actions(ctx);
+        self.sync_system_media();
         self.save_if_changed(ctx);
     }
 
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
+        self.handle_shortcuts(ui.ctx());
         self.covers.update(ui.ctx());
 
         // Пока трек играет, обновляем время и ползунок. Это перерисовка видимого окна;

@@ -223,20 +223,30 @@ impl CoverCache {
 /// а если ни в одном её нет — картинкой из их папки (см. `read_folder_cover`).
 /// Вместе с картинкой — хеш исходных байтов
 fn find_cover(candidates: &[PathBuf], size: CoverSize) -> Loaded {
-    candidates
-        .iter()
-        .find_map(|path| read_cover(path).and_then(|bytes| decode_cover(&bytes, size)))
-        .or_else(|| {
-            // Папки по порядку кандидатов, каждая один раз: треки альбома обычно в одной
-            let mut dirs: Vec<&Path> = Vec::new();
-            for dir in candidates.iter().filter_map(|path| path.parent()) {
-                if !dirs.contains(&dir) {
-                    dirs.push(dir);
-                }
+    cover_sources(candidates).find_map(|bytes| decode_cover(&bytes, size))
+}
+
+/// Байты обложки для файлов `candidates` как есть, без декодирования — в том же порядке
+/// поиска, что и `find_cover`
+pub fn cover_bytes(candidates: &[PathBuf]) -> Option<Vec<u8>> {
+    cover_sources(candidates).next()
+}
+
+/// Найденные картинки по порядку: из тегов файлов, затем из их папок. Читаются лениво —
+/// до первой подходящей
+fn cover_sources(candidates: &[PathBuf]) -> impl Iterator<Item = Vec<u8>> + '_ {
+    let tags = candidates.iter().filter_map(|path| read_cover(path));
+    let folders = std::iter::once(()).flat_map(move |()| {
+        // Папки по порядку кандидатов, каждая один раз: треки альбома обычно в одной
+        let mut dirs: Vec<&Path> = Vec::new();
+        for dir in candidates.iter().filter_map(|path| path.parent()) {
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
             }
-            dirs.into_iter()
-                .find_map(|dir| read_folder_cover(dir).and_then(|bytes| decode_cover(&bytes, size)))
-        })
+        }
+        dirs.into_iter().filter_map(read_folder_cover)
+    });
+    tags.chain(folders)
 }
 
 /// Картинка обложки, уменьшенная так, чтобы большая сторона была не больше

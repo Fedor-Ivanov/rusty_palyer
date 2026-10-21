@@ -113,6 +113,9 @@ pub(crate) enum Action {
     // ---- плеер
     /// Играет — пауза, иначе — играть
     TogglePlay,
+    /// Играть, если не играет (системная кнопка «play», не переключатель)
+    Play,
+    Pause,
     Previous,
     Next,
     /// Перемотать текущий трек на позицию в секундах
@@ -164,6 +167,15 @@ impl PlayerApp {
         // Кадр уже нарисован до действий — следующий покажет их результат сразу,
         // не дожидаясь движения мыши
         ctx.request_repaint();
+    }
+
+    /// Играть текущий трек. Трека нет — ничего не делает: пробел или системная кнопка
+    /// при пустой очереди не повод для ошибки
+    fn play(&mut self) -> Result<(), String> {
+        if self.core.controller.player().current_track.is_none() {
+            return Ok(());
+        }
+        self.core.controller.play()
     }
 
     fn apply(&mut self, action: Action) {
@@ -301,8 +313,16 @@ impl PlayerApp {
                 let result = if self.core.controller.player().state == PlayerState::Playing {
                     self.core.controller.pause()
                 } else {
-                    self.core.controller.play()
+                    self.play()
                 };
+                self.report_error(result);
+            }
+            Action::Play => {
+                let result = self.play();
+                self.report_error(result);
+            }
+            Action::Pause => {
+                let result = self.core.controller.pause();
                 self.report_error(result);
             }
             Action::Previous => {
