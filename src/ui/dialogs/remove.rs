@@ -38,7 +38,7 @@ impl PlayerApp {
     pub(crate) fn request_songs_removal(&mut self, indices: &[usize]) {
         let tracks: Vec<&Track> = indices
             .iter()
-            .filter_map(|&index| self.state.library.tracks().get(index))
+            .filter_map(|&index| self.core.library.tracks().get(index))
             .collect();
         let names = tracks.iter().map(|track| track.title.clone()).collect();
         let paths: HashSet<PathBuf> = tracks.iter().map(|track| track.path.clone()).collect();
@@ -60,7 +60,7 @@ impl PlayerApp {
         names: Vec<String>,
         tracks: &[usize],
     ) {
-        let paths = self.state.track_paths(tracks);
+        let paths = self.core.library.paths_of(tracks);
         self.pending_removal = Some(LibraryRemoval { kind, names, paths });
     }
 

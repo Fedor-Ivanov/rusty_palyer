@@ -100,7 +100,7 @@ impl PlayerApp {
     /// в порядке сетки
     pub(crate) fn artist_albums(&self, artist: &str) -> impl Iterator<Item = &AlbumGroup> {
         let artist = artist.to_lowercase();
-        self.state
+        self.core
             .groups
             .albums
             .iter()

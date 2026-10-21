@@ -111,7 +111,7 @@ impl PlayerApp {
         // Что уже есть в библиотеке, второй раз не читаем: повторное добавление
         // той же папки добавит только новые файлы
         let skip = match destination {
-            Destination::Library => self.state.library.paths().clone(),
+            Destination::Library => self.core.library.paths().clone(),
             Destination::Playlist | Destination::LibraryRefresh => HashSet::new(),
         };
         self.loaders.push_back(PendingLoad {
@@ -161,20 +161,20 @@ impl PlayerApp {
         // Обновление библиотеки: файлы, которые не удалось прочитать, просто остаются
         // как были (пропавшие и так помечены) — ошибки не показываем
         if destination == Destination::LibraryRefresh {
-            let result = self.state.library.refresh(finished.tracks);
-            self.set_result(result);
+            let result = self.core.library.refresh(finished.tracks);
+            self.report_error(result);
             return;
         }
 
         if !finished.tracks.is_empty() {
             match destination {
                 Destination::Library => {
-                    let result = self.state.library.add(finished.tracks);
-                    self.set_result(result);
+                    let result = self.core.library.add(finished.tracks);
+                    self.report_error(result);
                 }
                 Destination::Playlist => {
-                    let result = self.state.add_to_playlist(finished.tracks);
-                    self.set_result(result);
+                    let result = self.core.controller.add_tracks(finished.tracks);
+                    self.report_error(result);
                 }
                 Destination::LibraryRefresh => unreachable!("обработано выше"),
             }

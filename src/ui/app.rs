@@ -19,7 +19,7 @@ use super::{
     pages::LibrarySearch,
     style::theme::WINDOW_TINT,
 };
-use crate::core::{library::loader::Source, playback::PlayerState, state::AppState};
+use crate::core::{Core, library::loader::Source, playback::PlayerState};
 
 // Кнопки-иконки в заголовке библиотеки и в нижнем блоке списка
 pub(crate) const ADD_BUTTON_SIZE: f32 = 24.0;
@@ -36,7 +36,7 @@ pub(crate) const NOW_PLAYING_BAR_GAP: f32 = 8.0;
 pub struct PlayerApp {
     /// Данные приложения: медиатека, плеер с плейлистом, настройки. Меняются только
     /// в `action::apply`
-    pub(crate) state: AppState,
+    pub(crate) core: Core,
     /// Действия, отправленные за кадр (`dispatch`): выполняются в его конце — см. `action`
     pub(crate) actions: Vec<Action>,
     pub(crate) error: Option<String>,
@@ -80,22 +80,22 @@ pub(crate) enum ListFocus {
 impl PlayerApp {
     /// Из `cc` берётся контекст egui — чтобы аудиопоток мог разбудить приложение
     pub fn new(cc: &eframe::CreationContext) -> Self {
-        let (state, error) = AppState::load(eframe::storage_dir(crate::APP_NAME), {
+        let (core, error) = Core::load(eframe::storage_dir(crate::APP_NAME), {
             // Трек доиграл — будим приложение: eframe вызовет `logic` и при скрытом окне
             let ctx = cc.egui_ctx.clone();
             move || ctx.request_repaint()
         });
-        i18n::set_language(state.settings.language());
-        let outdated = state.library.outdated_paths();
+        i18n::set_language(core.settings.language());
+        let outdated = core.library.outdated_paths();
         // Последнего трека нет (первый запуск или его не было при выходе) — в Now Playing
         // показать нечего, открываем альбомы
-        let route = if state.controller.player().current_track.is_none() {
+        let route = if core.controller.player().current_track.is_none() {
             Route::Albums
         } else {
             Route::NowPlaying
         };
         let mut app = Self {
-            state,
+            core,
             actions: Vec::new(),
             error,
             drag_secs: None,
@@ -126,17 +126,18 @@ impl PlayerApp {
     /// Пока зажата кнопка мыши, жест не закончен (например, тянут ползунок громкости) —
     /// настройки пишутся один раз, когда кнопку отпустят
     pub(crate) fn save_if_changed(&mut self, ctx: &egui::Context) {
-        let result = self.state.save_playlist_if_changed();
-        self.set_result(result);
+        let result = self.core.save_playlist_if_changed();
+        self.report_error(result);
         if !ctx.input(|input| input.pointer.any_down()) {
-            let result = self.state.save_settings_if_changed();
-            self.set_result(result);
+            let result = self.core.save_settings_if_changed();
+            self.report_error(result);
         }
     }
 
-    /// Запоминает ошибку для плашки. Успех её не сбрасывает: плашка закрывается только
-    /// кнопкой «OK», иначе ошибка исчезала бы сама при следующем удачном действии
-    pub(crate) fn set_result(&mut self, result: Result<(), String>) {
+    /// Сообщает об ошибке, если `result` — ошибка: она появится на плашке. `Ok` ничего
+    /// не делает и уже показанную ошибку не сбрасывает: плашка закрывается только кнопкой
+    /// «OK», иначе ошибка исчезала бы сама при следующем удачном действии
+    pub(crate) fn report_error(&mut self, result: Result<(), String>) {
         if let Err(e) = result {
             self.error = Some(e);
         }
@@ -155,7 +156,7 @@ impl eframe::App for PlayerApp {
     /// когда окно не видно: аудиопоток будит приложение, когда трек доиграл
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Трек доиграл — переходим к следующему в очереди
-        if self.state.controller.poll_events() {
+        if self.core.controller.poll_events() {
             self.dispatch(Action::TrackEnded);
         }
         self.poll_loaders(ctx);
@@ -168,7 +169,7 @@ impl eframe::App for PlayerApp {
 
         // Пока трек играет, обновляем время и ползунок. Это перерисовка видимого окна;
         // переход к следующему треку от неё не зависит — см. `logic`
-        if self.state.controller.player().state == PlayerState::Playing {
+        if self.core.controller.player().state == PlayerState::Playing {
             ui.ctx().request_repaint_after(Duration::from_millis(100));
         }
 
@@ -268,7 +269,7 @@ impl eframe::App for PlayerApp {
                 // и содержимое над плашкой сдвигается вместе с ней. Высота задана точно —
                 // иначе в первом кадре панель не знает её и прыгает
                 let mut show_bar = self.route != Route::NowPlaying
-                    && self.state.controller.player().current_track.is_some();
+                    && self.core.controller.player().current_track.is_some();
                 egui::Panel::bottom("now_playing_bar")
                     .frame(egui::Frame::new().inner_margin(egui::Margin {
                         left: 16,
@@ -293,7 +294,7 @@ impl eframe::App for PlayerApp {
                         }
                         egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
                             ui.vertical_centered_justified(|ui| {
-                                if self.state.controller.player().track_list.tracks.is_empty() {
+                                if self.core.controller.player().track_list.tracks.is_empty() {
                                     self.render_add_tracks_block(ui);
                                 } else {
                                     self.render_current_track_info(ui);

@@ -35,7 +35,7 @@ impl PlayerApp {
     /// Альбомы сеткой: обложка, название, исполнитель и год. С `artist` — только альбомы
     /// этого исполнителя (имя без учёта регистра, как при группировке)
     pub(crate) fn render_album_grid(&mut self, ui: &mut Ui, id_salt: &str, artist: Option<&str>) {
-        self.state.refresh_groups();
+        self.core.refresh_groups();
         // Чей профиль — для перехода в альбом из него; дальше имя нужно для сравнения
         let profile = artist.map(str::to_owned);
         let artist = artist.map(str::to_lowercase);
@@ -45,7 +45,7 @@ impl PlayerApp {
             None => normalized_query(&self.search.query),
         };
         let albums: Vec<&AlbumGroup> = self
-            .state
+            .core
             .groups
             .albums
             .iter()
@@ -60,7 +60,7 @@ impl PlayerApp {
         if albums.is_empty() {
             let text = if artist.is_some() {
                 t().no_albums
-            } else if self.state.groups.albums.is_empty() {
+            } else if self.core.groups.albums.is_empty() {
                 t().library_empty
             } else {
                 t().no_results
@@ -74,7 +74,7 @@ impl PlayerApp {
         let scope = format!(
             "{}/{}/{query}",
             artist.as_deref().unwrap_or_default(),
-            self.state.library.revision()
+            self.core.library.revision()
         );
         let grid = if id_salt == "artist_albums" {
             &mut self.artist_albums_grid

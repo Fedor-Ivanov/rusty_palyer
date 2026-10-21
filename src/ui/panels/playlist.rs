@@ -26,7 +26,7 @@ impl PlayerApp {
         egui::Frame::new().inner_margin(16.0).show(ui, |ui| {
             // Рядом с заголовком — сколько треков в плейлисте; пустой — без числа:
             // там и так «No tracks»
-            let count = self.state.controller.player().track_list.tracks.len();
+            let count = self.core.controller.player().track_list.tracks.len();
             let row = if count == 0 {
                 components::block_title(ui, t().playlist, Align::LEFT, TEXT)
             } else {
@@ -36,7 +36,7 @@ impl PlayerApp {
             self.render_add_button(ui, row, Destination::Playlist);
         });
 
-        if self.state.controller.player().track_list.tracks.is_empty() {
+        if self.core.controller.player().track_list.tracks.is_empty() {
             if self.loaders.is_empty() {
                 ui.painter().text(
                     panel_rect.center(),
@@ -51,7 +51,7 @@ impl PlayerApp {
 
         // Меню знает только, сколько строк выделено: какие — узнаём после списка
         let mut remove = false;
-        let list = &self.state.controller.player().track_list;
+        let list = &self.core.controller.player().track_list;
         let current = list.current_index;
         let response = self.playlist_view.show(
             ui,
@@ -89,7 +89,7 @@ impl PlayerApp {
 
     /// Нижний блок плейлиста: слева shuffle, справа две кнопки повтора
     pub(crate) fn render_playback_modes(&mut self, ui: &mut Ui) {
-        let list = &self.state.controller.player().track_list;
+        let list = &self.core.controller.player().track_list;
         let (shuffle, repeat) = (list.shuffle, list.repeat);
         let size = vec2(ADD_BUTTON_SIZE, ADD_BUTTON_SIZE);
 

@@ -79,7 +79,7 @@ impl PlayerApp {
             }
             // Верхний уровень раздела — с полем поиска справа. В пустой медиатеке искать нечего
             Route::Artists | Route::Albums | Route::Songs
-                if !self.state.library.tracks().is_empty() =>
+                if !self.core.library.tracks().is_empty() =>
             {
                 self.render_title_with_search(ui, section);
                 None
@@ -99,7 +99,7 @@ impl PlayerApp {
     pub(crate) fn render_title_with_search(&mut self, ui: &mut Ui, section: Section) {
         let note = (section == Section::Songs).then(|| {
             self.refresh_found_songs();
-            let total = self.state.library.tracks().len();
+            let total = self.core.library.tracks().len();
             let tracks = t().count(total, &t().track_count);
             match &self.search.found_songs {
                 Some(found) => format!(

@@ -49,7 +49,7 @@ impl PlayerApp {
             self.search.found_songs = None;
             return;
         }
-        let revision = self.state.library.revision();
+        let revision = self.core.library.revision();
         let up_to_date = self
             .search
             .found_songs
@@ -59,7 +59,7 @@ impl PlayerApp {
             return;
         }
         let (indices, tracks) = self
-            .state
+            .core
             .library
             .tracks()
             .iter()

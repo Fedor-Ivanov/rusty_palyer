@@ -17,7 +17,7 @@ impl PlayerApp {
     /// Все треки библиотеки списком — или найденные поиском. Двойной клик добавляет трек
     /// в плейлист и запускает его; из меню — добавить в плейлист или убрать из библиотеки
     pub(crate) fn render_songs(&mut self, ui: &mut Ui) {
-        if self.state.library.tracks().is_empty() {
+        if self.core.library.tracks().is_empty() {
             placeholder(ui, t().library_empty);
             return;
         }
@@ -52,7 +52,7 @@ impl PlayerApp {
         // Номера строк списка — номера в `found` (во время поиска) или сразу в медиатеке.
         // Меню знает только, сколько строк выделено: какие — узнаём после списка
         let mut menu = None;
-        let library = &self.state.library;
+        let library = &self.core.library;
         let found = self.search.found_songs.as_ref();
         let tracks = found.map_or(library.tracks(), |found| &found.tracks);
         let response = self.library_view.show(
@@ -97,7 +97,7 @@ impl PlayerApp {
     pub(crate) fn song_index(&self, row: usize) -> Option<usize> {
         match &self.search.found_songs {
             Some(found) => found.indices.get(row).copied(),
-            None => (row < self.state.library.tracks().len()).then_some(row),
+            None => (row < self.core.library.tracks().len()).then_some(row),
         }
     }
 
@@ -105,7 +105,7 @@ impl PlayerApp {
     pub(crate) fn shown_song_indices(&self) -> Vec<usize> {
         match &self.search.found_songs {
             Some(found) => found.indices.clone(),
-            None => (0..self.state.library.tracks().len()).collect(),
+            None => (0..self.core.library.tracks().len()).collect(),
         }
     }
 }

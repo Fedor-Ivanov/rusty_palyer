@@ -42,7 +42,7 @@ impl PlayerApp {
     pub(crate) fn render_controls(&mut self, ui: &mut Ui) {
         self.render_volume(ui);
 
-        let player = self.state.controller.player();
+        let player = self.core.controller.player();
         let has_track = player.current_track.is_some();
         let playing = player.state == PlayerState::Playing;
         let duration = player
@@ -52,7 +52,7 @@ impl PlayerApp {
 
         let position = self
             .drag_secs
-            .unwrap_or(self.state.controller.position_ms() as f32 / 1000.0)
+            .unwrap_or(self.core.controller.position_ms() as f32 / 1000.0)
             .min(duration);
 
         // Ряд: время слева, кнопка по центру, длительность справа
@@ -217,7 +217,7 @@ impl PlayerApp {
         paint_volume(
             ui,
             button_rect,
-            self.state.controller.volume().audible(),
+            self.core.controller.volume().audible(),
             button.hover,
         );
 
@@ -259,14 +259,14 @@ impl PlayerApp {
         if open && in_zone {
             let scroll = ui.input(|input| input.smooth_scroll_delta.y);
             if scroll != 0.0 {
-                let level = self.state.controller.volume().audible() + scroll / VOLUME_SCROLL_RANGE;
+                let level = self.core.controller.volume().audible() + scroll / VOLUME_SCROLL_RANGE;
                 self.dispatch(Action::SetVolume(level));
             }
         }
 
         // Блок — поверх центральной области: он выше нижней панели
         let mut level = None;
-        let audible = self.state.controller.volume().audible();
+        let audible = self.core.controller.volume().audible();
         egui::Area::new(popup_id)
             .order(Order::Foreground)
             .fixed_pos(popup.min)

@@ -68,7 +68,7 @@ impl Volume {
 /// Громкость, с которой включается звук, если ползунок стоял в нуле
 const UNMUTE_LEVEL: f32 = 0.5;
 
-/// Состояние плеера + связь с аудиопотоком. Аналог `AppState` и команд из Tauri-версии.
+/// Состояние плеера + связь с аудиопотоком. Аналог состояния и команд из Tauri-версии.
 pub struct PlayerController {
     player: Player,
     audio: Sender<AudioCmd>,
@@ -220,6 +220,21 @@ impl PlayerController {
         fastrand::shuffle(&mut added);
         list.shuffle_order.extend(added);
         self.playlist_revision += 1;
+    }
+
+    /// Добавляет треки в конец плейлиста. Если ничего ещё не выбрано, текущим становится
+    /// первый из добавленных; иначе текущий трек не трогаем
+    pub fn add_tracks(&mut self, tracks: Vec<Track>) -> Result<(), String> {
+        if tracks.is_empty() {
+            return Ok(());
+        }
+        let first_new = self.player.track_list.tracks.len();
+        let nothing_selected = self.player.current_track.is_none();
+        self.append_tracks(tracks);
+        if nothing_selected {
+            self.select(first_new)?;
+        }
+        Ok(())
     }
 
     /// Заменяет весь плейлист треками `tracks` и запускает воспроизведение с первого из них,

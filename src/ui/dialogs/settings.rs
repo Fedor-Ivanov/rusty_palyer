@@ -41,7 +41,7 @@ impl PlayerApp {
                     let options =
                         Language::ALL.map(|language| (language, i18n::language_name(language)));
                     if let Some(language) =
-                        components::select(ui, self.state.settings.language(), &options)
+                        components::select(ui, self.core.settings.language(), &options)
                     {
                         self.dispatch(Action::SetLanguage(language));
                     }

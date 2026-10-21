@@ -151,6 +151,38 @@ impl Library {
         self.save()
     }
 
+    /// Треки с номерами `indices` для воспроизведения — без тех, чьих файлов нет на диске:
+    /// сыграть их всё равно не выйдет
+    pub fn playable_tracks(&self, indices: &[usize]) -> Vec<Track> {
+        indices
+            .iter()
+            .filter(|&&index| !self.is_missing(index))
+            .filter_map(|&index| self.tracks.get(index).cloned())
+            .collect()
+    }
+
+    /// Пути треков с номерами `indices`. Удаление спрашивает подтверждение по путям, а не
+    /// по номерам: пока ждём ответа, номера могут измениться, а пути — нет
+    pub fn paths_of(&self, indices: &[usize]) -> HashSet<PathBuf> {
+        indices
+            .iter()
+            .filter_map(|&index| self.tracks.get(index))
+            .map(|track| track.path.clone())
+            .collect()
+    }
+
+    /// Удаляет треки файлов `paths` (сами файлы не трогает) и сохраняет библиотеку
+    pub fn remove_paths(&mut self, paths: &HashSet<PathBuf>) -> Result<(), String> {
+        let indices = self
+            .tracks
+            .iter()
+            .enumerate()
+            .filter(|(_, track)| paths.contains(&track.path))
+            .map(|(index, _)| index)
+            .collect();
+        self.remove(&indices)
+    }
+
     /// Удаляет треки с номерами `indices` (сами файлы не трогает) и сохраняет библиотеку
     pub fn remove(&mut self, indices: &BTreeSet<usize>) -> Result<(), String> {
         let mut index = 0;

@@ -111,16 +111,16 @@ impl PlayerApp {
             Action::PlayLibraryTracks(indices) => {
                 // Номера треков плейлиста меняются целиком — старое выделение ни на что не указывает
                 self.playlist_view.clear_selection();
-                let result = self.state.play_library_tracks(&indices);
-                self.set_result(result);
+                let result = self.core.play_library_tracks(&indices);
+                self.report_error(result);
             }
             Action::PlayFromLibrary(index) => {
-                let result = self.state.play_from_library(index);
-                self.set_result(result);
+                let result = self.core.play_from_library(index);
+                self.report_error(result);
             }
             Action::AddToPlaylist(indices) => {
-                let result = self.state.add_library_tracks_to_playlist(&indices);
-                self.set_result(result);
+                let result = self.core.add_library_tracks_to_playlist(&indices);
+                self.report_error(result);
             }
             Action::RequestSongsRemoval(indices) => self.request_songs_removal(&indices),
             Action::RequestGroupRemoval {
@@ -129,54 +129,54 @@ impl PlayerApp {
                 tracks,
             } => self.request_group_removal(kind, names, &tracks),
             Action::RemoveFromLibrary(paths) => {
-                let result = self.state.remove_from_library(&paths);
-                self.set_result(result);
+                let result = self.core.library.remove_paths(&paths);
+                self.report_error(result);
                 // Номера треков медиатеки сдвинулись — выделение в списках ни на что не указывает
                 self.library_view.clear_selection();
                 self.album_tracks_view.clear_selection();
             }
             Action::PlayPlaylistTrack(index) => {
                 let result = self
-                    .state
+                    .core
                     .controller
                     .select(index)
-                    .and_then(|()| self.state.controller.play());
-                self.set_result(result);
+                    .and_then(|()| self.core.controller.play());
+                self.report_error(result);
             }
             Action::RemoveFromPlaylist(indices) => {
-                let result = self.state.controller.remove_tracks(&indices);
-                self.set_result(result);
+                let result = self.core.controller.remove_tracks(&indices);
+                self.report_error(result);
                 // Номера оставшихся треков сдвинулись
                 self.playlist_view.clear_selection();
             }
-            Action::ToggleShuffle => self.state.controller.toggle_shuffle(),
-            Action::ToggleRepeat(mode) => self.state.controller.toggle_repeat(mode),
+            Action::ToggleShuffle => self.core.controller.toggle_shuffle(),
+            Action::ToggleRepeat(mode) => self.core.controller.toggle_repeat(mode),
 
             Action::TogglePlay => {
-                let result = if self.state.controller.player().state == PlayerState::Playing {
-                    self.state.controller.pause()
+                let result = if self.core.controller.player().state == PlayerState::Playing {
+                    self.core.controller.pause()
                 } else {
-                    self.state.controller.play()
+                    self.core.controller.play()
                 };
-                self.set_result(result);
+                self.report_error(result);
             }
             Action::Previous => {
-                let result = self.state.controller.skip_prev();
-                self.set_result(result);
+                let result = self.core.controller.skip_prev();
+                self.report_error(result);
             }
             Action::Next => {
-                let result = self.state.controller.skip_next();
-                self.set_result(result);
+                let result = self.core.controller.skip_next();
+                self.report_error(result);
             }
             Action::Seek(secs) => {
-                let result = self.state.controller.seek((secs.max(0.0) * 1000.0) as u64);
-                self.set_result(result);
+                let result = self.core.controller.seek((secs.max(0.0) * 1000.0) as u64);
+                self.report_error(result);
             }
-            Action::SetVolume(level) => self.state.controller.set_volume_level(level),
-            Action::ToggleMute => self.state.controller.toggle_mute(),
+            Action::SetVolume(level) => self.core.controller.set_volume_level(level),
+            Action::ToggleMute => self.core.controller.toggle_mute(),
             Action::TrackEnded => {
-                let result = self.state.controller.play_next();
-                self.set_result(result);
+                let result = self.core.controller.play_next();
+                self.report_error(result);
             }
 
             Action::AddFiles(destination) => self.add_files(destination),
@@ -188,7 +188,7 @@ impl PlayerApp {
             Action::CancelLoading => self.cancel_loading(),
 
             Action::SetLanguage(language) => {
-                self.state.settings.update_language(language);
+                self.core.settings.update_language(language);
                 i18n::set_language(language);
             }
 

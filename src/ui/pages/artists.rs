@@ -44,8 +44,8 @@ impl PlayerApp {
     /// Исполнители сеткой: картинка (пока заглушка с первой буквой имени) и имя.
     /// Клик по исполнителю открывает его профиль
     pub(crate) fn render_artists(&mut self, ui: &mut Ui) {
-        self.state.refresh_groups();
-        let artists = &self.state.groups.artists;
+        self.core.refresh_groups();
+        let artists = &self.core.groups.artists;
         if artists.is_empty() {
             placeholder(ui, t().library_empty);
             return;
@@ -63,7 +63,7 @@ impl PlayerApp {
         // действие из меню запоминаем и выполняем после неё. Номера плиток относятся
         // к библиотеке и запросу — при их изменении выделение сбрасывается
         self.artists_grid
-            .set_scope(&format!("{}/{query}", self.state.library.revision()));
+            .set_scope(&format!("{}/{query}", self.core.library.revision()));
         let mut action = None;
         let response = self.artists_grid.show(
             ui,
@@ -92,7 +92,7 @@ impl PlayerApp {
 
         if let Some(index) = response.opened {
             self.dispatch(Action::Navigate(Route::Artist(
-                self.state.groups.artists[shown[index]].name.clone(),
+                self.core.groups.artists[shown[index]].name.clone(),
             )));
         } else if let Some(action) = action {
             // Исполнители — в порядке сетки, их треки — альбом за альбомом
@@ -100,7 +100,7 @@ impl PlayerApp {
                 .artists_grid
                 .selection()
                 .iter()
-                .map(|&index| self.state.groups.artists[shown[index]].name.clone())
+                .map(|&index| self.core.groups.artists[shown[index]].name.clone())
                 .collect();
             let tracks: Vec<usize> = names
                 .iter()
@@ -119,12 +119,12 @@ impl PlayerApp {
     /// Шапка профиля исполнителя: крупное имя, сколько альбомов и песен, кнопки
     /// «Play all» (заменить плейлист его треками и играть) и «Add to playlist»
     pub(crate) fn render_artist_header(&mut self, ui: &mut Ui, artist: &str) {
-        self.state.refresh_groups();
+        self.core.refresh_groups();
         let tracks = self.artist_track_indices(artist);
         // Сыграть можно только треки, чьи файлы на месте — их и считаем
         let playable = tracks
             .iter()
-            .filter(|&&index| !self.state.library.is_missing(index))
+            .filter(|&&index| !self.core.library.is_missing(index))
             .count();
         let album_count = self.artist_albums(artist).count();
 

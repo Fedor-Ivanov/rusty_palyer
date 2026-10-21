@@ -65,7 +65,7 @@ impl PlayerApp {
     /// У каждого трека своё проявление — при смене трека новый фон плавно появляется, когда
     /// готов. Возвращает фигуру: её кладут под панели (см. `ui`), а не поверх них
     pub(crate) fn track_backdrop(&mut self, ui: &Ui) -> Option<Shape> {
-        let track = self.state.controller.player().current_track.clone()?;
+        let track = self.core.controller.player().current_track.clone()?;
         let path = track.path.clone();
         let candidates = self.cover_candidates(&track);
         let cover = self.covers.get(&candidates, CoverSize::Backdrop);
@@ -100,10 +100,10 @@ impl PlayerApp {
     /// Альбом трека в библиотеке — ищется так же, как при группировке: без учёта регистра,
     /// пустое имя — «Unknown …»
     fn track_album(&mut self, track: &Track) -> Option<&AlbumGroup> {
-        self.state.refresh_groups();
+        self.core.refresh_groups();
         let artist_key = groups::album_artist(track).to_lowercase();
         let album_key = normalized_name(&track.album, groups::UNKNOWN_ALBUM);
-        self.state.groups.albums.iter().find(|album| {
+        self.core.groups.albums.iter().find(|album| {
             album.title.to_lowercase() == album_key && album.artist.to_lowercase() == artist_key
         })
     }
@@ -111,7 +111,7 @@ impl PlayerApp {
     /// Детали текущего трека: название, исполнитель и альбом (ссылки — если они есть
     /// в библиотеке), длительность; ниже — обложка по центру свободного места
     pub(crate) fn render_current_track_info(&mut self, ui: &mut Ui) {
-        let Some(track) = self.state.controller.player().current_track.clone() else {
+        let Some(track) = self.core.controller.player().current_track.clone() else {
             return;
         };
         // Исполнитель и альбом трека в библиотеке — ищутся так же, как при группировке
@@ -119,7 +119,7 @@ impl PlayerApp {
         // Ссылка ведёт к исполнителю альбома: «Angèle; Kiddy Smile» — к Angèle
         let artist_key = groups::album_artist(&track).to_lowercase();
         let artist_in_library = self
-            .state
+            .core
             .groups
             .artists
             .iter()
@@ -188,7 +188,7 @@ impl PlayerApp {
 
     /// Плашка текущего трека внизу центральной области. Возвращает `true`, если по ней кликнули
     pub(crate) fn render_now_playing_bar(&mut self, ui: &mut Ui) -> bool {
-        let Some(track) = &self.state.controller.player().current_track else {
+        let Some(track) = &self.core.controller.player().current_track else {
             return false;
         };
         components::now_playing_bar(ui, &track.title, &track.artist)

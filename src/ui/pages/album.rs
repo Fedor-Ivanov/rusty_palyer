@@ -26,9 +26,9 @@ impl PlayerApp {
     /// Страница альбома: обложка, название, исполнитель, год, кнопки «Play all» и
     /// «Add to playlist» и ниже — список его треков
     pub(crate) fn render_album_page(&mut self, ui: &mut Ui, key: &AlbumKey) {
-        self.state.refresh_groups();
+        self.core.refresh_groups();
         let Some(album) = self
-            .state
+            .core
             .groups
             .albums
             .iter()
@@ -105,16 +105,16 @@ impl PlayerApp {
         // ---- треки альбома
         let tracks: Vec<Track> = indices
             .iter()
-            .filter_map(|&index| self.state.library.tracks().get(index).cloned())
+            .filter_map(|&index| self.core.library.tracks().get(index).cloned())
             .collect();
         let current_path = self
-            .state
+            .core
             .controller
             .player()
             .current_track
             .as_ref()
             .map(|track| track.path.clone());
-        let library = &self.state.library;
+        let library = &self.core.library;
         // Меню знает только, сколько строк выделено: какие — узнаём после списка
         let mut menu = None;
         let response = self.album_tracks_view.show(
