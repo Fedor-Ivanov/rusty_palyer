@@ -83,6 +83,14 @@ pub static TEXTS: Texts = Texts {
 
     language: "Язык",
     version: "Версия",
+    glass_tint: "Оттенок стекла",
+    transparency: "Прозрачность",
+    tint_graphite: "Графит",
+    tint_blue: "Синий",
+    tint_violet: "Фиолетовый",
+    tint_green: "Зелёный",
+    tint_rose: "Розовый",
+    tint_amber: "Янтарный",
 
     remove_album_title: "Удалить альбом из медиатеки?",
     remove_album_message: "Альбом «{album}» будет удалён из медиатеки. \

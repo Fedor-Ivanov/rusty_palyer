@@ -188,7 +188,7 @@ impl PlayerApp {
             0.0
         };
 
-        paint_slider(ui, rect, fraction, SLIDER_TRACK_HEIGHT, SLIDER_THUMB_RADIUS);
+        components::paint_slider(ui, rect, fraction, SLIDER_TRACK_HEIGHT, SLIDER_THUMB_RADIUS);
     }
 
     /// Строка громкости: кнопка у правого края, над оставшимся временем. Клик — mute.
@@ -300,25 +300,6 @@ impl PlayerApp {
             self.dispatch(Action::SetVolume(level));
         }
     }
-}
-
-/// Ползунок в `rect`: дорожка высотой `track_height` во всю ширину, заполненная до
-/// `fraction` (0.0..=1.0), и круглый бегунок радиуса `thumb_radius`
-fn paint_slider(ui: &Ui, rect: Rect, fraction: f32, track_height: f32, thumb_radius: f32) {
-    let painter = ui.painter();
-    let track = Rect::from_center_size(rect.center(), vec2(rect.width(), track_height));
-    painter.rect_filled(track, CornerRadius::same(255), SLIDER_TRACK);
-
-    let thumb_x = track.left() + track.width() * fraction;
-    let filled = Rect::from_min_max(track.min, pos2(thumb_x, track.max.y));
-    painter.rect_filled(filled, CornerRadius::same(255), TEXT);
-
-    // Бегунок не вылезает за края. max/min вместо clamp: на очень узком
-    // окне левая граница может оказаться правее правой, и clamp паникует
-    let thumb_x = thumb_x
-        .min(rect.right() - thumb_radius)
-        .max(rect.left() + thumb_radius);
-    painter.circle_filled(pos2(thumb_x, rect.center().y), thumb_radius, TEXT);
 }
 
 /// Где по высоте ходит центр бегунка вертикального ползунка в `rect`: от низа (0.0) до

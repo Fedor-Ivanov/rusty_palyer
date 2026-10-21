@@ -93,6 +93,14 @@ pub static TEXTS: Texts = Texts {
 
     language: "Langue",
     version: "Version",
+    glass_tint: "Teinte du verre",
+    transparency: "Transparence",
+    tint_graphite: "Graphite",
+    tint_blue: "Bleu",
+    tint_violet: "Violet",
+    tint_green: "Vert",
+    tint_rose: "Rose",
+    tint_amber: "Ambre",
 
     remove_album_title: "Supprimer l'album de la bibliothèque ?",
     remove_album_message: "« {album} » sera supprimé de votre bibliothèque. \

@@ -17,7 +17,7 @@ use super::{
     loading::{Destination, PendingLoad},
     navigation::Route,
     pages::LibrarySearch,
-    style::theme::WINDOW_TINT,
+    style::theme::window_tint,
     system_media::SystemMedia,
 };
 use crate::core::{Core, library::loader::Source, playback::PlayerState, playlists::PlaylistId};
@@ -199,7 +199,8 @@ impl eframe::App for PlayerApp {
 
         // Тонировка системного размытия — первой, под всеми панелями. Других заливок у панелей
         // нет: стекло по всему окну одного цвета
-        ui.painter().rect_filled(ui.max_rect(), 0, WINDOW_TINT);
+        let tint = window_tint(self.core.settings.glass());
+        ui.painter().rect_filled(ui.max_rect(), 0, tint);
         // Место под фон Now Playing — сразу над тонировкой, под всеми панелями. Сам фон
         // известен, только когда дойдём до центральной области, а заходит он и под панель
         // управления, нарисованную раньше, — поэтому место занимаем заранее

@@ -92,6 +92,14 @@ pub static TEXTS: Texts = Texts {
 
     language: "Language",
     version: "Version",
+    glass_tint: "Glass tint",
+    transparency: "Transparency",
+    tint_graphite: "Graphite",
+    tint_blue: "Blue",
+    tint_violet: "Violet",
+    tint_green: "Green",
+    tint_rose: "Rose",
+    tint_amber: "Amber",
 
     remove_album_title: "Remove album from library?",
     remove_album_message: "\u{201C}{album}\u{201D} will be removed from your library. \

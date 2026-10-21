@@ -1,5 +1,7 @@
 use eframe::egui::Color32;
 
+use crate::core::settings::{Glass, GlassTint};
+
 // Glassmorphism: тёмное стекло — системное размытие под прозрачным окном
 // и графитовая тонировка, одна на всё окно.
 // Белый с альфой задаётся premultiplied: (a, a, a, a).
@@ -21,9 +23,37 @@ pub const ICON_OFF: Color32 = Color32::from_rgb(0x8A, 0x8A, 0x92);
 /// Недоступная кнопка
 pub const ICON_DISABLED: Color32 = Color32::from_rgb(0x5C, 0x5C, 0x63);
 
-/// Графитовая тонировка поверх системного размытия — единственная заливка стекла,
-/// одна на всё окно. Чем больше альфа, тем темнее и тем меньше видно, что за окном
-pub const WINDOW_TINT: Color32 = Color32::from_rgba_unmultiplied_const(24, 24, 26, 195);
+/// Тонировка поверх системного размытия — единственная заливка стекла, одна на всё окно.
+/// Цвет — по оттенку из настроек; чем больше альфа, тем темнее и тем меньше видно, что
+/// за окном. Прозрачность 0.0 — альфа 255, 1.0 — `MIN_TINT_ALPHA`
+pub fn window_tint(glass: Glass) -> Color32 {
+    let [r, g, b] = tint_rgb(glass.tint);
+    let alpha = 255.0 - glass.transparency.clamp(0.0, 1.0) * (255.0 - MIN_TINT_ALPHA);
+    Color32::from_rgba_unmultiplied(r, g, b, alpha.round() as u8)
+}
+
+/// Самая прозрачная тонировка: прозрачнее светлый текст на светлом фоне за окном
+/// становится нечитаемым
+const MIN_TINT_ALPHA: f32 = 105.0;
+
+/// Кружок оттенка в настройках: тот же цвет, но светлее — сама тонировка тёмная,
+/// и кружки разных оттенков на тёмном стекле были бы почти неотличимы
+pub fn tint_swatch(tint: GlassTint) -> Color32 {
+    let [r, g, b] = tint_rgb(tint).map(|channel| (channel as f32 * 2.6).min(255.0) as u8);
+    Color32::from_rgb(r, g, b)
+}
+
+/// Цвета оттенков стекла — тёмные: на тонировке светлый текст
+fn tint_rgb(tint: GlassTint) -> [u8; 3] {
+    match tint {
+        GlassTint::Graphite => [24, 24, 26],
+        GlassTint::Blue => [16, 28, 56],
+        GlassTint::Violet => [36, 22, 56],
+        GlassTint::Green => [16, 40, 30],
+        GlassTint::Rose => [54, 20, 34],
+        GlassTint::Amber => [52, 36, 14],
+    }
+}
 
 /// Линия изменения ширины панели на границе панелей: приглушённый белый (~18%),
 /// чтобы делила разделы, но не бросалась в глаза

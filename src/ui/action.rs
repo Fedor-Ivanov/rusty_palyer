@@ -19,7 +19,7 @@ use crate::{
         library::loader::Finished,
         playback::{PlayerState, RepeatMode},
         playlists::PlaylistId,
-        settings::Language,
+        settings::{Glass, Language},
     },
     ui::{
         app::PlayerApp,
@@ -142,6 +142,8 @@ pub(crate) enum Action {
     // ---- настройки
     /// Язык интерфейса — со следующего кадра весь интерфейс на нём
     SetLanguage(Language),
+    /// Оттенок и прозрачность стекла окна
+    SetGlass(Glass),
 
     // ---- навигация
     /// Открыть страницу (см. `navigation`)
@@ -356,6 +358,8 @@ impl PlayerApp {
                 self.core.settings.update_language(language);
                 i18n::set_language(language);
             }
+
+            Action::SetGlass(glass) => self.core.settings.update_glass(glass),
 
             Action::Navigate(route) => self.navigate(route),
         }

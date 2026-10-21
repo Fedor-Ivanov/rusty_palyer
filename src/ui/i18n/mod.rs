@@ -18,7 +18,7 @@ mod uk;
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
-use crate::core::settings::Language;
+use crate::core::settings::{GlassTint, Language};
 
 /// Правило форм числа в русском и украинском: 1, 21, 101 — «трек»; 2–4, 22–24 — «трека»;
 /// 0, 5–20, 25–30, 111–114 — «треков»
@@ -166,6 +166,14 @@ pub struct Texts {
     // ---- настройки
     pub language: &'static str,
     pub version: &'static str,
+    pub glass_tint: &'static str,
+    pub transparency: &'static str,
+    pub tint_graphite: &'static str,
+    pub tint_blue: &'static str,
+    pub tint_violet: &'static str,
+    pub tint_green: &'static str,
+    pub tint_rose: &'static str,
+    pub tint_amber: &'static str,
 
     // ---- диалог удаления из медиатеки
     pub remove_album_title: &'static str,
@@ -219,6 +227,18 @@ pub fn fill(template: &str, values: &[(&str, &str)]) -> String {
         .fold(template.to_owned(), |text, (name, value)| {
             text.replace(&format!("{{{name}}}"), value)
         })
+}
+
+/// Название оттенка стекла на текущем языке
+pub fn tint_name(tint: GlassTint) -> &'static str {
+    match tint {
+        GlassTint::Graphite => t().tint_graphite,
+        GlassTint::Blue => t().tint_blue,
+        GlassTint::Violet => t().tint_violet,
+        GlassTint::Green => t().tint_green,
+        GlassTint::Rose => t().tint_rose,
+        GlassTint::Amber => t().tint_amber,
+    }
 }
 
 /// Название языка на нём самом — так языки показывают в списке выбора: кто не понимает

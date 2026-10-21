@@ -30,6 +30,50 @@ impl Language {
     ];
 }
 
+/// Оттенок стекла — тонировки поверх системного размытия под окном. Сами цвета — в теме
+/// интерфейса
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum GlassTint {
+    #[default]
+    Graphite,
+    Blue,
+    Violet,
+    Green,
+    Rose,
+    Amber,
+}
+
+impl GlassTint {
+    /// Все оттенки — в порядке кружков в настройках
+    pub const ALL: [GlassTint; 6] = [
+        GlassTint::Graphite,
+        GlassTint::Blue,
+        GlassTint::Violet,
+        GlassTint::Green,
+        GlassTint::Rose,
+        GlassTint::Amber,
+    ];
+}
+
+/// Стекло окна: оттенок и прозрачность
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq)]
+#[serde(default)]
+pub struct Glass {
+    pub tint: GlassTint,
+    /// 0.0 — тонировка непрозрачная, за окном ничего не видно; 1.0 — самое прозрачное
+    /// стекло, какое допускает интерфейс
+    pub transparency: f32,
+}
+
+impl Default for Glass {
+    fn default() -> Self {
+        Self {
+            tint: GlassTint::default(),
+            transparency: 0.4,
+        }
+    }
+}
+
 /// Все настройки. Отсутствующее в файле поле получает значение по умолчанию
 /// (`serde(default)`): файл от прошлой версии приложения, где этой настройки ещё не было,
 /// читается без ошибок — отдельная версия формата не нужна
@@ -38,6 +82,7 @@ impl Language {
 pub struct Settings {
     language: Language,
     volume: Volume,
+    glass: Glass,
 }
 
 impl Settings {
@@ -55,6 +100,17 @@ impl Settings {
 
     pub fn update_volume(&mut self, volume: Volume) {
         self.volume = volume;
+    }
+
+    pub fn glass(&self) -> Glass {
+        self.glass
+    }
+
+    pub fn update_glass(&mut self, glass: Glass) {
+        self.glass = Glass {
+            transparency: glass.transparency.clamp(0.0, 1.0),
+            ..glass
+        };
     }
 }
 
@@ -109,7 +165,7 @@ impl SettingsStore {
 
 #[cfg(test)]
 mod tests {
-    use super::{Language, Settings, SettingsStore};
+    use super::{Glass, GlassTint, Language, Settings, SettingsStore};
     use crate::core::playback::Volume;
     use std::fs;
 
@@ -126,6 +182,10 @@ mod tests {
             level: 0.3,
             muted: true,
         });
+        settings.update_glass(Glass {
+            tint: GlassTint::Violet,
+            transparency: 0.7,
+        });
         store.save_if_changed(&settings).unwrap();
         let (_, loaded, error) = SettingsStore::load(Some(dir.clone()));
         assert!(error.is_none());
@@ -137,6 +197,7 @@ mod tests {
         assert!(error.is_none());
         assert_eq!(loaded.language(), Language::Russian);
         assert_eq!(loaded.volume(), Volume::default());
+        assert_eq!(loaded.glass(), Glass::default());
 
         fs::remove_dir_all(dir).unwrap();
     }
