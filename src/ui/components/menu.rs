@@ -15,3 +15,12 @@ pub fn menu_style(ui: &mut Ui) {
 pub fn menu_item(ui: &mut Ui, text: &str) -> Response {
     ui.add(egui::Button::new(RichText::new(text).size(MENU_TEXT_SIZE)))
 }
+
+/// Подменю: пункт со стрелкой, при наведении рядом открывается вложенное меню
+/// в том же оформлении
+pub fn submenu(ui: &mut Ui, text: &str, add_contents: impl FnOnce(&mut Ui)) {
+    ui.menu_button(RichText::new(text).size(MENU_TEXT_SIZE), |ui| {
+        menu_style(ui);
+        add_contents(ui);
+    });
+}

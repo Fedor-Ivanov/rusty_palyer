@@ -6,6 +6,8 @@ mod album;
 mod albums;
 mod artists;
 mod now_playing;
+mod playlist;
+mod playlists;
 mod search;
 mod shared;
 mod songs;
@@ -54,6 +56,8 @@ impl PlayerApp {
             Route::Artists => self.render_artists(ui),
             Route::Albums => self.render_albums(ui),
             Route::Songs => self.render_songs(ui),
+            Route::Playlists => self.render_playlists(ui),
+            Route::Playlist(id) => self.render_playlist_page(ui, id),
             Route::NowPlaying => {}
         }
     }
@@ -77,10 +81,23 @@ impl PlayerApp {
             Route::Artist(artist) => {
                 components::breadcrumb_title(ui, &[title], &artist).map(|_| Route::Artists)
             }
+            Route::Playlist(id) => {
+                let name = self
+                    .core
+                    .playlists
+                    .get(id)
+                    .map(|playlist| playlist.name.clone())
+                    .unwrap_or_default();
+                components::breadcrumb_title(ui, &[title], &name).map(|_| Route::Playlists)
+            }
             // Верхний уровень раздела — с полем поиска справа. В пустой медиатеке искать нечего
             Route::Artists | Route::Albums | Route::Songs
                 if !self.core.library.tracks().is_empty() =>
             {
+                self.render_title_with_search(ui, section);
+                None
+            }
+            Route::Playlists if !self.core.playlists.all().is_empty() => {
                 self.render_title_with_search(ui, section);
                 None
             }

@@ -2,10 +2,7 @@
 
 use eframe::egui::{self, Label, RichText, Sense, Ui, vec2};
 
-use super::{
-    ARTIST_NAME_SIZE, TILE_RADIUS,
-    shared::{TrackMenuItem, track_menu},
-};
+use super::{ARTIST_NAME_SIZE, TILE_RADIUS, shared::track_menu};
 use crate::{
     core::library::Track,
     ui::{
@@ -93,7 +90,7 @@ impl PlayerApp {
                                     .clicked();
                             add_all = components::pill_button(
                                 ui,
-                                t().add_to_playlist,
+                                t().add_to_queue,
                                 ButtonStyle::Secondary,
                             )
                             .clicked();
@@ -117,6 +114,8 @@ impl PlayerApp {
         let library = &self.core.library;
         // Меню знает только, сколько строк выделено: какие — узнаём после списка
         let mut menu = None;
+        // Плейлисты для подменю «Add to playlist ›»
+        let playlists = self.playlist_entries();
         let response = self.album_tracks_view.show(
             ui,
             &tracks,
@@ -127,7 +126,7 @@ impl PlayerApp {
             },
             self.focus == ListFocus::Library,
             |ui, selected| {
-                if let Some(item) = track_menu(ui, selected) {
+                if let Some(item) = track_menu(ui, selected, &playlists) {
                     menu = Some(item);
                 }
             },
@@ -153,16 +152,13 @@ impl PlayerApp {
         let action = if play_all {
             Some(Action::PlayLibraryTracks(indices))
         } else if add_all {
-            Some(Action::AddToPlaylist(indices))
+            Some(Action::AddToQueue(indices))
         } else {
             match menu {
-                Some(TrackMenuItem::AddToPlaylist) => Some(Action::AddToPlaylist(selected)),
-                Some(TrackMenuItem::RemoveFromLibrary) => {
-                    Some(Action::RequestSongsRemoval(selected))
-                }
+                Some(item) => Some(item.into_action(selected)),
                 None if response.delete => Some(Action::RequestSongsRemoval(selected)),
-                // Двойной клик играет только этот трек: он встаёт в плейлист, а не заменяет
-                // его альбомом — для альбома целиком есть кнопки «Play all» и «Add to playlist»
+                // Двойной клик играет только этот трек: он встаёт в очередь, а не заменяет
+                // её альбомом — для альбома целиком есть кнопки «Play all» и «Add to queue»
                 None => response
                     .activated
                     .map(|index| Action::PlayFromLibrary(indices[index])),

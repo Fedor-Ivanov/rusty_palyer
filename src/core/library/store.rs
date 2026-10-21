@@ -171,15 +171,20 @@ impl Library {
             .collect()
     }
 
-    /// Удаляет треки файлов `paths` (сами файлы не трогает) и сохраняет библиотеку
-    pub fn remove_paths(&mut self, paths: &HashSet<PathBuf>) -> Result<(), String> {
-        let indices = self
-            .tracks
+    /// Номера треков файлов `paths` — в порядке библиотеки. Файлов, которых в ней нет,
+    /// в ответе нет
+    pub fn indices_of(&self, paths: &HashSet<PathBuf>) -> Vec<usize> {
+        self.tracks
             .iter()
             .enumerate()
             .filter(|(_, track)| paths.contains(&track.path))
             .map(|(index, _)| index)
-            .collect();
+            .collect()
+    }
+
+    /// Удаляет треки файлов `paths` (сами файлы не трогает) и сохраняет библиотеку
+    pub fn remove_paths(&mut self, paths: &HashSet<PathBuf>) -> Result<(), String> {
+        let indices = self.indices_of(paths).into_iter().collect();
         self.remove(&indices)
     }
 

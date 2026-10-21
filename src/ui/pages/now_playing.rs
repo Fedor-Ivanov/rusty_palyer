@@ -55,7 +55,7 @@ impl PlayerApp {
             .on_hover_text(t().open_files)
             .clicked()
         {
-            self.dispatch(Action::AddFiles(Destination::Playlist));
+            self.dispatch(Action::AddFiles(Destination::Queue));
         }
     }
 
@@ -129,11 +129,8 @@ impl PlayerApp {
                             .on_hover_text(t().show_artist)
                             .clicked();
                 } else {
-                    ui.label(
-                        RichText::new(&track.artist)
-                            .size(DETAILS_SIZE)
-                            .color(TEXT_MUTED),
-                    );
+                    // Не из медиатеки — тот же вид, только без перехода
+                    components::text_line(ui, &track.artist, DETAILS_SIZE, TEXT_MUTED);
                 }
             }
             if !track.album.is_empty() {
@@ -142,11 +139,7 @@ impl PlayerApp {
                         .on_hover_text(t().show_album)
                         .clicked();
                 } else {
-                    ui.label(
-                        RichText::new(&track.album)
-                            .size(DETAILS_SIZE)
-                            .color(TEXT_MUTED),
-                    );
+                    components::text_line(ui, &track.album, DETAILS_SIZE, TEXT_MUTED);
                 }
             }
             ui.label(

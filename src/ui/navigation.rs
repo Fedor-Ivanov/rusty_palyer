@@ -3,7 +3,10 @@
 //! Переходы — только через `PlayerApp::navigate`: там же всё, что меняется вместе с ними.
 
 use super::app::PlayerApp;
-use crate::{core::library::groups::AlbumGroup, ui::i18n};
+use crate::{
+    core::{library::groups::AlbumGroup, playlists::PlaylistId},
+    ui::i18n,
+};
 
 /// Раздел — верхний уровень навигации: пункт меню и заголовок
 #[derive(Clone, Copy, PartialEq)]
@@ -12,11 +15,17 @@ pub(crate) enum Section {
     Artists,
     Albums,
     Songs,
+    Playlists,
 }
 
 impl Section {
     /// Разделы медиатеки — пункты меню слева, по порядку
-    pub(crate) const LIBRARY: [Section; 3] = [Section::Artists, Section::Albums, Section::Songs];
+    pub(crate) const LIBRARY: [Section; 4] = [
+        Section::Artists,
+        Section::Albums,
+        Section::Songs,
+        Section::Playlists,
+    ];
 
     /// Название на языке интерфейса
     pub(crate) fn title(self) -> &'static str {
@@ -26,6 +35,7 @@ impl Section {
             Self::Artists => t.artists,
             Self::Albums => t.albums,
             Self::Songs => t.songs,
+            Self::Playlists => t.playlists,
         }
     }
 }
@@ -46,6 +56,9 @@ pub(crate) enum Route {
     /// Альбом, открытый из всех альбомов
     Album(AlbumKey),
     Songs,
+    Playlists,
+    /// Сохранённый плейлист
+    Playlist(PlaylistId),
 }
 
 impl Route {
@@ -56,6 +69,7 @@ impl Route {
             Self::Artists | Self::Artist(_) | Self::ArtistAlbum { .. } => Section::Artists,
             Self::Albums | Self::Album(_) => Section::Albums,
             Self::Songs => Section::Songs,
+            Self::Playlists | Self::Playlist(_) => Section::Playlists,
         }
     }
 
@@ -73,6 +87,7 @@ impl Route {
             Self::ArtistAlbum { artist, .. } => Self::Artist(artist.clone()),
             Self::Artist(_) => Self::Artists,
             Self::Album(_) => Self::Albums,
+            Self::Playlist(_) => Self::Playlists,
             route => route.clone(),
         }
     }
@@ -86,6 +101,7 @@ impl From<Section> for Route {
             Section::Artists => Self::Artists,
             Section::Albums => Self::Albums,
             Section::Songs => Self::Songs,
+            Section::Playlists => Self::Playlists,
         }
     }
 }
@@ -128,6 +144,10 @@ impl PlayerApp {
         }
         if route.album() != self.route.album() {
             self.album_tracks_view.clear_selection();
+        }
+        // Выделение треков плейлиста относится к открытому плейлисту
+        if !matches!((&route, &self.route), (Route::Playlist(a), Route::Playlist(b)) if a == b) {
+            self.playlist_tracks_view.clear_selection();
         }
         self.route = route;
     }

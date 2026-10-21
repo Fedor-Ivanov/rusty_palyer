@@ -2,9 +2,9 @@
 
 mod audio;
 mod player;
-mod playlist;
-mod saved_playlist;
+mod queue;
+mod saved_queue;
 
 pub use player::{PlayerController, PlayerState, Volume};
-pub use playlist::RepeatMode;
-pub use saved_playlist::PlaylistStore;
+pub use queue::RepeatMode;
+pub use saved_queue::QueueStore;

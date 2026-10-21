@@ -65,6 +65,8 @@ impl PlayerApp {
         self.artists_grid
             .set_scope(&format!("{}/{query}", self.core.library.revision()));
         let mut action = None;
+        // Плейлисты для подменю «Add to playlist ›»
+        let playlists = self.playlist_entries();
         let response = self.artists_grid.show(
             ui,
             shown.len(),
@@ -74,7 +76,7 @@ impl PlayerApp {
             |ui, index, image_rect, tile| {
                 let artist = &artists[shown[index]];
                 paint_artist_placeholder(ui, image_rect, &artist.name, tile.hover);
-                if let Some(menu_action) = group_context_menu(tile, GroupKind::Artist) {
+                if let Some(menu_action) = group_context_menu(tile, GroupKind::Artist, &playlists) {
                     action = Some(menu_action);
                 }
                 vec![TileLine {
@@ -129,7 +131,7 @@ impl PlayerApp {
         let album_count = self.artist_albums(artist).count();
 
         let mut play_all = false;
-        let mut add_to_playlist = false;
+        let mut add_to_queue = false;
         egui::Frame::new()
             .inner_margin(egui::Margin {
                 left: 16,
@@ -163,20 +165,17 @@ impl PlayerApp {
                         ui.spacing_mut().item_spacing.x = 8.0;
                         play_all = components::pill_button(ui, t().play_all, ButtonStyle::Primary)
                             .clicked();
-                        add_to_playlist = components::pill_button(
-                            ui,
-                            t().add_to_playlist,
-                            ButtonStyle::Secondary,
-                        )
-                        .clicked();
+                        add_to_queue =
+                            components::pill_button(ui, t().add_to_queue, ButtonStyle::Secondary)
+                                .clicked();
                     });
                 });
             });
 
         if play_all {
             self.dispatch(Action::PlayLibraryTracks(tracks));
-        } else if add_to_playlist {
-            self.dispatch(Action::AddToPlaylist(tracks));
+        } else if add_to_queue {
+            self.dispatch(Action::AddToQueue(tracks));
         }
     }
 }

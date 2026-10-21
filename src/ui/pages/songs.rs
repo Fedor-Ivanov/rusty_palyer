@@ -2,10 +2,7 @@
 
 use eframe::egui::{self, Ui};
 
-use super::{
-    placeholder,
-    shared::{TrackMenuItem, track_menu},
-};
+use super::{placeholder, shared::track_menu};
 use crate::ui::{
     action::Action,
     app::{ListFocus, PlayerApp},
@@ -55,6 +52,8 @@ impl PlayerApp {
         let library = &self.core.library;
         let found = self.search.found_songs.as_ref();
         let tracks = found.map_or(library.tracks(), |found| &found.tracks);
+        // Плейлисты для подменю «Add to playlist ›»
+        let playlists = self.playlist_entries();
         let response = self.library_view.show(
             ui,
             tracks,
@@ -64,7 +63,7 @@ impl PlayerApp {
             },
             self.focus == ListFocus::Library,
             |ui, selected| {
-                if let Some(item) = track_menu(ui, selected) {
+                if let Some(item) = track_menu(ui, selected, &playlists) {
                     menu = Some(item);
                 }
             },
@@ -80,8 +79,7 @@ impl PlayerApp {
             .filter_map(|&index| self.song_index(index))
             .collect();
         let action = match menu {
-            Some(TrackMenuItem::AddToPlaylist) => Some(Action::AddToPlaylist(selected)),
-            Some(TrackMenuItem::RemoveFromLibrary) => Some(Action::RequestSongsRemoval(selected)),
+            Some(item) => Some(item.into_action(selected)),
             None if response.delete => Some(Action::RequestSongsRemoval(selected)),
             None => response
                 .activated

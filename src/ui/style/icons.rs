@@ -377,3 +377,71 @@ pub fn paint_volume(ui: &Ui, rect: Rect, volume: f32, hover: f32) {
         stroke_icon_path(ui, rect, &arc, VOLUME_WAVE_STROKE, ICON);
     }
 }
+
+// Иконки кнопок очереди — линиями толщиной QUEUE_ICON_STROKE в сетке 24×24
+const QUEUE_ICON_STROKE: f32 = 1.7;
+/// Рисунок иконок очереди — меньше кнопки: круг наведения вокруг него просторнее
+const QUEUE_ICON_SCALE: f32 = 0.8;
+/// «Сохранить как плейлист»: дискета — корпус со срезанным углом, шторка сверху
+/// и наклейка снизу
+const FLOPPY_LINES: [&[(f32, f32)]; 3] = [
+    &[
+        (4.5, 4.5),
+        (16.0, 4.5),
+        (19.5, 8.0),
+        (19.5, 19.5),
+        (4.5, 19.5),
+        (4.5, 4.5),
+    ],
+    &[(8.0, 4.5), (8.0, 9.0), (15.0, 9.0), (15.0, 4.5)],
+    &[(7.5, 19.5), (7.5, 13.5), (16.5, 13.5), (16.5, 19.5)],
+];
+/// «Очистить очередь»: метла — ручка сверху справа, перемычка поперёк неё и щётка веером
+/// вниз влево с двумя полосками щетины
+const BROOM_LINES: [&[(f32, f32)]; 4] = [
+    // Ручка
+    &[(19.5, 4.5), (13.0, 11.0)],
+    // Щётка: перемычка, края веера и низ
+    &[
+        (10.5, 9.5),
+        (14.5, 13.5),
+        (11.0, 19.5),
+        (4.5, 13.0),
+        (10.5, 9.5),
+    ],
+    // Щетина
+    &[(11.8, 10.8), (6.7, 15.2)],
+    &[(13.2, 12.2), (8.8, 17.3)],
+];
+
+/// Цвет иконки-кнопки: обычный или, если кнопка недоступна, приглушённый
+fn button_color(enabled: bool) -> Color32 {
+    if enabled { ICON } else { ICON_DISABLED }
+}
+
+/// Кнопка «сохранить очередь как плейлист» — дискета. `hover`: 0.0..=1.0, плавный
+/// переход наведения
+pub fn paint_save_playlist(ui: &Ui, rect: Rect, enabled: bool, hover: f32) {
+    paint_queue_icon(ui, rect, &FLOPPY_LINES, enabled, hover);
+}
+
+/// Кнопка «очистить очередь» — метла. `hover`: 0.0..=1.0, плавный переход наведения
+pub fn paint_broom(ui: &Ui, rect: Rect, enabled: bool, hover: f32) {
+    paint_queue_icon(ui, rect, &BROOM_LINES, enabled, hover);
+}
+
+/// Иконка кнопки очереди из линий `lines`: круг наведения во всю кнопку, рисунок —
+/// уменьшенный по центру. Толщина линий — та же, что у иконки во всю кнопку
+fn paint_queue_icon(ui: &Ui, rect: Rect, lines: &[&[(f32, f32)]], enabled: bool, hover: f32) {
+    paint_hover_circle(ui, rect, hover);
+    let icon = Rect::from_center_size(rect.center(), rect.size() * QUEUE_ICON_SCALE);
+    for line in lines {
+        stroke_icon_path(
+            ui,
+            icon,
+            line,
+            QUEUE_ICON_STROKE / QUEUE_ICON_SCALE,
+            button_color(enabled),
+        );
+    }
+}

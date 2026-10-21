@@ -18,20 +18,28 @@ use crate::{
     core::{
         library::loader::Finished,
         playback::{PlayerState, RepeatMode},
+        playlists::PlaylistId,
         settings::Language,
     },
     ui::{
-        app::PlayerApp, dialogs::remove::GroupKind, i18n, loading::Destination, navigation::Route,
+        app::PlayerApp,
+        dialogs::{
+            playlist::{NameDialog, NamePurpose},
+            remove::GroupKind,
+        },
+        i18n,
+        loading::Destination,
+        navigation::Route,
     },
 };
 
 pub(crate) enum Action {
-    /// Заменить плейлист треками медиатеки (их номерами в медиатеке) и играть с первого
+    /// Заменить очередь треками медиатеки (их номерами в медиатеке) и играть с первого
     PlayLibraryTracks(Vec<usize>),
-    /// Сыграть трек медиатеки: если его нет в плейлисте, он встаёт в конец
+    /// Сыграть трек медиатеки: если его нет в очереди, он встаёт в конец
     PlayFromLibrary(usize),
-    /// Треки медиатеки — в конец плейлиста
-    AddToPlaylist(Vec<usize>),
+    /// Треки медиатеки — в конец очереди
+    AddToQueue(Vec<usize>),
     /// Спросить, удалить ли треки медиатеки (см. `dialogs::remove`)
     RequestSongsRemoval(Vec<usize>),
     /// Спросить, удалить ли альбомы или исполнителей `names` — их треки медиатеки `tracks`
@@ -43,12 +51,64 @@ pub(crate) enum Action {
     /// Удалить из медиатеки треки этих файлов — подтверждено в диалоге. Сами файлы
     /// остаются на диске
     RemoveFromLibrary(HashSet<PathBuf>),
-    /// Сыграть трек плейлиста с номером
-    PlayPlaylistTrack(usize),
-    /// Убрать из плейлиста треки с номерами
-    RemoveFromPlaylist(BTreeSet<usize>),
+    /// Сыграть трек очереди с номером
+    PlayQueueTrack(usize),
+    /// Убрать из очереди треки с номерами
+    RemoveFromQueue(BTreeSet<usize>),
+    /// Очистить очередь: воспроизведение останавливается
+    ClearQueue,
+    /// Треки очереди с номерами — в медиатеку (те, что не из неё)
+    AddQueueTracksToLibrary(Vec<usize>),
     ToggleShuffle,
     ToggleRepeat(RepeatMode),
+
+    // ---- сохранённые плейлисты
+    /// Открыть окно названия, чтобы сохранить очередь как плейлист
+    RequestSaveQueue,
+    SaveQueueAsPlaylist(String),
+    /// Перезаписать связанный с очередью плейлист её треками
+    SaveQueueToPlaylist(PlaylistId),
+    /// Открыть окно названия для нового плейлиста из треков медиатеки
+    RequestNewPlaylist(Vec<usize>),
+    CreatePlaylist {
+        name: String,
+        tracks: Vec<usize>,
+    },
+    /// Треки медиатеки — в конец плейлиста
+    AddToPlaylist {
+        id: PlaylistId,
+        tracks: Vec<usize>,
+    },
+    /// Заменить очередь треками плейлиста и играть
+    PlayPlaylist(PlaylistId),
+    /// Сыграть трек плейлиста: если его нет в очереди, он встаёт в конец
+    PlayFromPlaylist {
+        id: PlaylistId,
+        index: usize,
+    },
+    /// Треки плейлиста с номерами — в конец очереди
+    AddPlaylistTracksToQueue {
+        id: PlaylistId,
+        indices: Vec<usize>,
+    },
+    /// Треки плейлиста с номерами — в медиатеку (те, что не из неё)
+    AddPlaylistTracksToLibrary {
+        id: PlaylistId,
+        indices: Vec<usize>,
+    },
+    /// Убрать из плейлиста треки с номерами
+    RemoveFromPlaylist {
+        id: PlaylistId,
+        indices: BTreeSet<usize>,
+    },
+    RequestRenamePlaylist(PlaylistId),
+    RenamePlaylist {
+        id: PlaylistId,
+        name: String,
+    },
+    /// Спросить, удалить ли плейлист (см. `dialogs::playlist`)
+    RequestPlaylistDeletion(PlaylistId),
+    DeletePlaylist(PlaylistId),
 
     // ---- плеер
     /// Играет — пауза, иначе — играть
@@ -110,7 +170,7 @@ impl PlayerApp {
         match action {
             Action::PlayLibraryTracks(indices) => {
                 // Номера треков плейлиста меняются целиком — старое выделение ни на что не указывает
-                self.playlist_view.clear_selection();
+                self.queue_view.clear_selection();
                 let result = self.core.play_library_tracks(&indices);
                 self.report_error(result);
             }
@@ -118,8 +178,8 @@ impl PlayerApp {
                 let result = self.core.play_from_library(index);
                 self.report_error(result);
             }
-            Action::AddToPlaylist(indices) => {
-                let result = self.core.add_library_tracks_to_playlist(&indices);
+            Action::AddToQueue(indices) => {
+                let result = self.core.add_library_tracks_to_queue(&indices);
                 self.report_error(result);
             }
             Action::RequestSongsRemoval(indices) => self.request_songs_removal(&indices),
@@ -135,7 +195,7 @@ impl PlayerApp {
                 self.library_view.clear_selection();
                 self.album_tracks_view.clear_selection();
             }
-            Action::PlayPlaylistTrack(index) => {
+            Action::PlayQueueTrack(index) => {
                 let result = self
                     .core
                     .controller
@@ -143,12 +203,97 @@ impl PlayerApp {
                     .and_then(|()| self.core.controller.play());
                 self.report_error(result);
             }
-            Action::RemoveFromPlaylist(indices) => {
+            Action::RemoveFromQueue(indices) => {
                 let result = self.core.controller.remove_tracks(&indices);
                 self.report_error(result);
                 // Номера оставшихся треков сдвинулись
-                self.playlist_view.clear_selection();
+                self.queue_view.clear_selection();
             }
+            Action::ClearQueue => {
+                let result = self.core.controller.clear();
+                self.report_error(result);
+                self.queue_view.clear_selection();
+            }
+
+            Action::AddQueueTracksToLibrary(indices) => {
+                let result = self.core.add_queue_tracks_to_library(&indices);
+                self.report_error(result);
+            }
+
+            Action::RequestSaveQueue => {
+                self.name_dialog = Some(NameDialog::new(NamePurpose::SaveQueue, String::new()));
+            }
+            Action::SaveQueueAsPlaylist(name) => {
+                let result = self.core.save_queue_as_playlist(&name).map(drop);
+                self.report_error(result);
+            }
+            Action::SaveQueueToPlaylist(id) => {
+                let result = self.core.save_queue_to_playlist(id);
+                self.report_error(result);
+            }
+            Action::RequestNewPlaylist(tracks) => {
+                self.name_dialog = Some(NameDialog::new(
+                    NamePurpose::NewPlaylist(tracks),
+                    String::new(),
+                ));
+            }
+            Action::CreatePlaylist { name, tracks } => {
+                let result = self
+                    .core
+                    .create_playlist_from_library(&name, &tracks)
+                    .map(drop);
+                self.report_error(result);
+            }
+            Action::AddToPlaylist { id, tracks } => {
+                let result = self.core.add_library_tracks_to_playlist(id, &tracks);
+                self.report_error(result);
+            }
+            Action::PlayPlaylist(id) => {
+                self.queue_view.clear_selection();
+                let result = self.core.play_playlist(id);
+                self.report_error(result);
+            }
+            Action::PlayFromPlaylist { id, index } => {
+                let result = self.core.play_from_playlist(id, index);
+                self.report_error(result);
+            }
+            Action::AddPlaylistTracksToQueue { id, indices } => {
+                let result = self.core.add_playlist_tracks_to_queue(id, &indices);
+                self.report_error(result);
+            }
+            Action::AddPlaylistTracksToLibrary { id, indices } => {
+                let result = self.core.add_playlist_tracks_to_library(id, &indices);
+                self.report_error(result);
+            }
+            Action::RemoveFromPlaylist { id, indices } => {
+                let result = self.core.playlists.remove_tracks(id, &indices);
+                self.report_error(result);
+                // Номера оставшихся треков сдвинулись
+                self.playlist_tracks_view.clear_selection();
+            }
+            Action::RequestRenamePlaylist(id) => {
+                let name = self
+                    .core
+                    .playlists
+                    .get(id)
+                    .map(|playlist| playlist.name.clone())
+                    .unwrap_or_default();
+                self.name_dialog = Some(NameDialog::new(NamePurpose::Rename(id), name));
+            }
+            Action::RenamePlaylist { id, name } => {
+                let result = self.core.playlists.rename(id, &name);
+                self.report_error(result);
+            }
+            Action::RequestPlaylistDeletion(id) => self.pending_playlist_deletion = Some(id),
+            Action::DeletePlaylist(id) => {
+                let result = self.core.playlists.delete(id);
+                self.report_error(result);
+                // Была открыта его страница — к списку плейлистов
+                if self.route == Route::Playlist(id) {
+                    self.navigate(Route::Playlists);
+                }
+            }
+
             Action::ToggleShuffle => self.core.controller.toggle_shuffle(),
             Action::ToggleRepeat(mode) => self.core.controller.toggle_repeat(mode),
 

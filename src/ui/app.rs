@@ -12,14 +12,14 @@ use super::{
     action::Action,
     components::{self, CoverFade, TileGridView, TrackListView},
     covers::CoverCache,
-    dialogs::remove::LibraryRemoval,
+    dialogs::{playlist::NameDialog, remove::LibraryRemoval},
     i18n,
     loading::{Destination, PendingLoad},
     navigation::Route,
     pages::LibrarySearch,
     style::theme::WINDOW_TINT,
 };
-use crate::core::{Core, library::loader::Source, playback::PlayerState};
+use crate::core::{Core, library::loader::Source, playback::PlayerState, playlists::PlaylistId};
 
 // Кнопки-иконки в заголовке библиотеки и в нижнем блоке списка
 pub(crate) const ADD_BUTTON_SIZE: f32 = 24.0;
@@ -34,7 +34,7 @@ pub(crate) const CONTENT_MIN_WIDTH: f32 = 260.0;
 pub(crate) const NOW_PLAYING_BAR_GAP: f32 = 8.0;
 
 pub struct PlayerApp {
-    /// Данные приложения: медиатека, плеер с плейлистом, настройки. Меняются только
+    /// Данные приложения: медиатека, сохранённые плейлисты, плеер с очередью, настройки. Меняются только
     /// в `action::apply`
     pub(crate) core: Core,
     /// Действия, отправленные за кадр (`dispatch`): выполняются в его конце — см. `action`
@@ -50,7 +50,7 @@ pub struct PlayerApp {
     /// Открыто ли окно настроек
     pub(crate) settings_open: bool,
     pub(crate) library_view: TrackListView,
-    pub(crate) playlist_view: TrackListView,
+    pub(crate) queue_view: TrackListView,
     /// Какой список получает клавиши (⌘A, Esc, Delete) — тот, с которым работали последним
     pub(crate) focus: ListFocus,
     /// Что открыто в центральной области. Меняется только через `navigate`
@@ -65,6 +65,13 @@ pub struct PlayerApp {
     pub(crate) search: LibrarySearch,
     /// Альбом или исполнитель, удаление которых из библиотеки ждёт подтверждения в диалоге
     pub(crate) pending_removal: Option<LibraryRemoval>,
+    /// Окно названия плейлиста, пока открыто
+    pub(crate) name_dialog: Option<NameDialog>,
+    /// Плейлист, удаление которого ждёт подтверждения
+    pub(crate) pending_playlist_deletion: Option<PlaylistId>,
+    /// Сетка сохранённых плейлистов и список треков открытого плейлиста
+    pub(crate) playlists_grid: TileGridView,
+    pub(crate) playlist_tracks_view: TrackListView,
     /// Миниатюры обложек для сетки альбомов
     pub(crate) covers: CoverCache,
     /// Обложка и фон текущего трека: плавная смена при переключении трека
@@ -75,7 +82,7 @@ pub struct PlayerApp {
 #[derive(Clone, Copy, PartialEq)]
 pub(crate) enum ListFocus {
     Library,
-    Playlist,
+    Queue,
     /// Сетка исполнителей или альбомов
     Grid,
 }
@@ -106,8 +113,8 @@ impl PlayerApp {
             loader_shown_at: None,
             settings_open: false,
             library_view: TrackListView::new("library"),
-            playlist_view: TrackListView::new("playlist"),
-            focus: ListFocus::Playlist,
+            queue_view: TrackListView::new("playlist"),
+            focus: ListFocus::Queue,
             route,
             album_tracks_view: TrackListView::new("album_tracks"),
             artists_grid: TileGridView::new("artists"),
@@ -115,6 +122,10 @@ impl PlayerApp {
             artist_albums_grid: TileGridView::new("artist_albums"),
             search: LibrarySearch::default(),
             pending_removal: None,
+            name_dialog: None,
+            pending_playlist_deletion: None,
+            playlists_grid: TileGridView::new("playlists"),
+            playlist_tracks_view: TrackListView::new("playlist_tracks"),
             covers: CoverCache::new(),
             cover_fade: CoverFade::default(),
             backdrop_fade: CoverFade::default(),
@@ -126,12 +137,12 @@ impl PlayerApp {
         app
     }
 
-    /// Сохраняет плейлист и настройки, если они изменились. Вызывается в конце `logic`
+    /// Сохраняет очередь и настройки, если они изменились. Вызывается в конце `logic`
     /// (изменения без окна: следующий трек) и в конце `ui` (изменения из интерфейса).
     /// Пока зажата кнопка мыши, жест не закончен (например, тянут ползунок громкости) —
     /// настройки пишутся один раз, когда кнопку отпустят
     pub(crate) fn save_if_changed(&mut self, ctx: &egui::Context) {
-        let result = self.core.save_playlist_if_changed();
+        let result = self.core.save_queue_if_changed();
         self.report_error(result);
         if !ctx.input(|input| input.pointer.any_down()) {
             let result = self.core.save_settings_if_changed();
@@ -242,7 +253,7 @@ impl eframe::App for PlayerApp {
                         self.render_playback_modes(ui);
                     });
 
-                self.render_playlist(ui);
+                self.render_queue(ui);
             });
 
         let widgets = &mut ui.style_mut().visuals.widgets;
@@ -313,6 +324,8 @@ impl eframe::App for PlayerApp {
 
         self.render_removal_dialog(ui.ctx());
         self.render_settings_dialog(ui.ctx());
+        self.render_playlist_name_dialog(ui.ctx());
+        self.render_playlist_deletion_dialog(ui.ctx());
 
         // Плашки поверх всего окна, по центру сверху: прогресс добавления (только когда
         // poll_loaders решил его показать) и под ним ошибка — пока не нажмут «OK»

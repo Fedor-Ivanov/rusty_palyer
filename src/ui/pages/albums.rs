@@ -1,11 +1,11 @@
 //! Альбомы сеткой — все или одного исполнителя (в его профиле).
 
-use eframe::egui::{Align, Rect, Ui, vec2};
+use eframe::egui::{Align, Ui};
 
 use super::{
     TILE_RADIUS, placeholder,
     search::{contains_query, normalized_query},
-    shared::{GroupAction, Target, group_action, group_context_menu},
+    shared::{GroupAction, Target, group_action, group_context_menu, overlay_play_button},
 };
 use crate::{
     core::library::groups::AlbumGroup,
@@ -17,14 +17,8 @@ use crate::{
         dialogs::remove::GroupKind,
         i18n::t,
         navigation::{AlbumKey, Route},
-        style::icons::paint_overlay_play,
     },
 };
-
-/// Кнопка play поверх обложки альбома: размер и отступ от угла обложки
-pub(crate) const OVERLAY_PLAY_SIZE: f32 = 32.0;
-
-pub(crate) const OVERLAY_PLAY_INSET: f32 = 8.0;
 
 impl PlayerApp {
     /// Все альбомы библиотеки
@@ -56,6 +50,8 @@ impl PlayerApp {
                     && contains_query(&album.title, &query)
             })
             .collect();
+        // Плейлисты для подменю «Add to playlist ›»
+        let playlists = self.playlist_entries();
         let covers = &mut self.covers;
         if albums.is_empty() {
             let text = if artist.is_some() {
@@ -99,25 +95,12 @@ impl PlayerApp {
 
                 // Кнопка play в левом верхнем углу обложки — проявляется при наведении на плитку
                 // и играет только этот альбом, независимо от выделения
-                if tile.hover > 0.0 {
-                    let play_rect = Rect::from_min_size(
-                        image_rect.min + vec2(OVERLAY_PLAY_INSET, OVERLAY_PLAY_INSET),
-                        vec2(OVERLAY_PLAY_SIZE, OVERLAY_PLAY_SIZE),
-                    );
-                    let play = components::icon_button(
-                        ui,
-                        play_rect,
-                        components::HitShape::Circle,
-                        &format!("play_album {index}"),
-                        true,
-                    );
-                    paint_overlay_play(ui, play_rect, tile.hover, play.hover);
-                    if play.clicked {
-                        action = Some((GroupAction::Play, Target::One(index)));
-                    }
+                // Кнопка play на обложке играет только этот альбом, независимо от выделения
+                if overlay_play_button(ui, image_rect, tile, &format!("play_album {index}")) {
+                    action = Some((GroupAction::Play, Target::One(index)));
                 }
 
-                if let Some(menu_action) = group_context_menu(tile, GroupKind::Album) {
+                if let Some(menu_action) = group_context_menu(tile, GroupKind::Album, &playlists) {
                     action = Some((menu_action, Target::Selection));
                 }
 

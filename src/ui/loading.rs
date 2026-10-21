@@ -1,5 +1,5 @@
 //! Добавление треков: кнопка «+» с меню, выбор файлов и папки, очередь фоновых
-//! добавлений, прогресс. Каждое добавление знает, куда идут треки: в библиотеку или плейлист.
+//! добавлений, прогресс. Каждое добавление знает, куда идут треки: в библиотеку или очередь.
 
 use eframe::egui::{self, Rect, Ui, pos2, vec2};
 use std::{
@@ -33,7 +33,7 @@ pub(crate) enum Destination {
     /// Сохраняются между запусками
     Library,
     /// Только послушать сейчас, в библиотеку не попадают
-    Playlist,
+    Queue,
     /// Перечитать теги треков, уже лежащих в библиотеке (после смены формата)
     LibraryRefresh,
 }
@@ -48,7 +48,7 @@ impl PendingLoad {
     /// Текст плашки прогресса с `{done}` и `{total}` — зависит от того, что делаем
     pub(crate) fn progress_template(&self) -> &'static str {
         match self.destination {
-            Destination::Library | Destination::Playlist => t().adding_progress,
+            Destination::Library | Destination::Queue => t().adding_progress,
             Destination::LibraryRefresh => t().updating_library_progress,
         }
     }
@@ -63,7 +63,7 @@ impl PlayerApp {
         );
         let id_salt = match destination {
             Destination::Library => "add_to_library",
-            Destination::Playlist => "add_to_playlist",
+            Destination::Queue => "add_to_queue",
             Destination::LibraryRefresh => "refresh_library",
         };
         let add =
@@ -112,7 +112,7 @@ impl PlayerApp {
         // той же папки добавит только новые файлы
         let skip = match destination {
             Destination::Library => self.core.library.paths().clone(),
-            Destination::Playlist | Destination::LibraryRefresh => HashSet::new(),
+            Destination::Queue | Destination::LibraryRefresh => HashSet::new(),
         };
         self.loaders.push_back(PendingLoad {
             loader: Loader::start(source, skip),
@@ -172,7 +172,7 @@ impl PlayerApp {
                     let result = self.core.library.add(finished.tracks);
                     self.report_error(result);
                 }
-                Destination::Playlist => {
+                Destination::Queue => {
                     let result = self.core.controller.add_tracks(finished.tracks);
                     self.report_error(result);
                 }

@@ -146,6 +146,21 @@ fn paint_in_row(ui: &Ui, row: Rect, x: f32, galley: Arc<Galley>, color: Color32)
     ui.painter().galley(pos2(x, y), galley, color);
 }
 
+/// Строка текста в том же виде, что `text_link`, но без клика: тот же размер и цвет,
+/// не шире доступного места — длинный текст обрезается с «…». Для мест, где одна и та же
+/// строка то ссылка, то нет — чтобы вид не менялся
+pub fn text_line(ui: &mut Ui, text: &str, size: f32, color: Color32) -> Response {
+    let galley = egui::WidgetText::from(RichText::new(text).size(size).color(color)).into_galley(
+        ui,
+        Some(egui::TextWrapMode::Truncate),
+        ui.available_width(),
+        FontId::proportional(size),
+    );
+    let (rect, response) = ui.allocate_exact_size(galley.size(), Sense::hover());
+    ui.painter().galley(rect.min, galley, color);
+    response
+}
+
 /// Текст-ссылка: в покое цвета `color`, при наведении плавно светлеет, курсор — рука.
 /// Не шире доступного места: длинный текст обрезается с «…»
 pub fn text_link(ui: &mut Ui, text: &str, size: f32, color: Color32) -> Response {

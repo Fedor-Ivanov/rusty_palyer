@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 use std::{fs, io::ErrorKind, path::PathBuf};
 
-use super::playlist::TrackList;
+use super::queue::TrackList;
 use crate::core::storage::write_atomically;
 
 const FILE_NAME: &str = "playlist.json";
@@ -22,12 +22,12 @@ struct Stored {
     playlist: TrackList,
 }
 
-pub struct PlaylistStore {
+pub struct QueueStore {
     /// Куда сохранять; `None` — папка данных недоступна, плейлист живёт только до выхода
     file: Option<PathBuf>,
 }
 
-impl PlaylistStore {
+impl QueueStore {
     pub fn new(dir: Option<PathBuf>) -> Self {
         Self {
             file: dir.map(|dir| dir.join(FILE_NAME)),
@@ -67,10 +67,10 @@ impl PlaylistStore {
 
 #[cfg(test)]
 mod tests {
-    use super::PlaylistStore;
+    use super::QueueStore;
     use crate::{
         core::library::Track,
-        core::playback::{RepeatMode, playlist::TrackList},
+        core::playback::{RepeatMode, queue::TrackList},
     };
     use std::{fs, path::PathBuf};
 
@@ -95,14 +95,11 @@ mod tests {
             ..Default::default()
         };
 
-        let store = PlaylistStore::new(Some(dir.clone()));
+        let store = QueueStore::new(Some(dir.clone()));
         assert!(store.load().unwrap().is_none());
         store.save(&list).unwrap();
 
-        let loaded = PlaylistStore::new(Some(dir.clone()))
-            .load()
-            .unwrap()
-            .unwrap();
+        let loaded = QueueStore::new(Some(dir.clone())).load().unwrap().unwrap();
         assert_eq!(loaded.tracks.len(), 1);
         assert_eq!(loaded.tracks[0].title, "A");
         assert_eq!(loaded.current_index, Some(0));

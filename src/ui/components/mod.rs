@@ -21,10 +21,10 @@ pub use dialog::{Confirm, confirm_dialog, modal};
 pub use format::format_secs;
 pub use grid::{Tile, TileGridView, TileLine};
 pub use layout::{
-    block_title, block_title_with_note, breadcrumb_title, paint_resize_line, text_link,
+    block_title, block_title_with_note, breadcrumb_title, paint_resize_line, text_line, text_link,
     title_button,
 };
-pub use menu::{menu_item, menu_style};
+pub use menu::{menu_item, menu_style, submenu};
 pub use nav::{NOW_PLAYING_BAR_HEIGHT, nav_item, now_playing_bar};
 pub use search::title_with_search;
 pub use select::select;

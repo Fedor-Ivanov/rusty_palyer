@@ -70,7 +70,10 @@ pub struct Texts {
     pub artists: &'static str,
     pub albums: &'static str,
     pub songs: &'static str,
-    pub playlist: &'static str,
+    /// Очередь воспроизведения — правая панель
+    pub queue: &'static str,
+    /// Сохранённые плейлисты — раздел медиатеки
+    pub playlists: &'static str,
     pub settings: &'static str,
 
     // ---- слова для чисел
@@ -86,6 +89,7 @@ pub struct Texts {
     pub library_empty: &'static str,
     pub no_results: &'static str,
     pub no_albums: &'static str,
+    pub no_playlists: &'static str,
 
     // ---- поиск и счётчики в заголовках
     pub search: &'static str,
@@ -118,18 +122,46 @@ pub struct Texts {
     // ---- действия
     pub play: &'static str,
     pub play_all: &'static str,
-    pub add_to_playlist: &'static str,
+    pub add_to_queue: &'static str,
     pub remove_from_library: &'static str,
-    pub remove_from_playlist: &'static str,
+    pub remove_from_queue: &'static str,
     /// Действия с несколькими выделенными: `{items}` — число со словом
     pub play_items: &'static str,
-    pub add_items_to_playlist: &'static str,
+    pub add_items_to_queue: &'static str,
     pub remove_items_from_library: &'static str,
-    pub remove_items_from_playlist: &'static str,
+    pub remove_items_from_queue: &'static str,
     pub remove: &'static str,
     pub cancel: &'static str,
     pub ok: &'static str,
     pub done: &'static str,
+
+    // ---- плейлисты
+    /// Подсказки кнопок очереди: сохранить её как плейлист и очистить
+    pub save_queue: &'static str,
+    /// Сохранить очередь в связанный с ней плейлист: `{playlist}`
+    pub save_queue_to: &'static str,
+    pub save_as_new_playlist: &'static str,
+    pub clear_queue: &'static str,
+    /// Подменю «добавить в сохранённый плейлист» и его первый пункт
+    pub add_to_playlist: &'static str,
+    pub new_playlist: &'static str,
+    /// Убрать треки со страницы плейлиста: `{items}` — число со словом
+    pub remove_from_this_playlist: &'static str,
+    /// Трек плейлиста не из медиатеки — в медиатеку: `{items}` — число со словом
+    pub add_to_library: &'static str,
+    pub add_items_to_library: &'static str,
+    pub remove_items_from_this_playlist: &'static str,
+    pub rename: &'static str,
+    pub delete: &'static str,
+    pub save: &'static str,
+    /// Заголовки окна названия плейлиста и подсказка в поле
+    pub save_playlist_title: &'static str,
+    pub new_playlist_title: &'static str,
+    pub rename_playlist_title: &'static str,
+    pub playlist_name_hint: &'static str,
+    pub delete_playlist_title: &'static str,
+    /// `{playlist}`
+    pub delete_playlist_message: &'static str,
 
     // ---- настройки
     pub language: &'static str,
@@ -159,6 +191,15 @@ pub struct Texts {
 }
 
 impl Texts {
+    /// Подпись действия над треками: для одного — `one` («Add to library»), для нескольких —
+    /// шаблон `many` с их числом в `{items}` («Add 3 tracks to library»)
+    pub fn for_tracks(&self, one: &str, many: &str, count: usize) -> String {
+        match count {
+            0 | 1 => one.to_owned(),
+            count => fill(many, &[("items", &self.count(count, &self.track_count))]),
+        }
+    }
+
     /// Число со словом в нужной форме: «3 tracks», «3 трека»
     pub fn count(&self, count: usize, word: &Plural) -> String {
         let form = match (self.plural_form)(count) {
@@ -218,16 +259,16 @@ mod tests {
     use std::collections::BTreeSet;
 
     /// Шаблоны с подстановками — чтобы сравнить их наборы `{…}` в языках
-    fn templates(t: &Texts) -> [(&'static str, &'static str); 17] {
+    fn templates(t: &Texts) -> [(&'static str, &'static str); 21] {
         [
             ("found_of", t.found_of),
             ("adding_progress", t.adding_progress),
             ("updating_library_progress", t.updating_library_progress),
             ("more_files_failed", t.more_files_failed),
             ("play_items", t.play_items),
-            ("add_items_to_playlist", t.add_items_to_playlist),
+            ("add_items_to_queue", t.add_items_to_queue),
             ("remove_items_from_library", t.remove_items_from_library),
-            ("remove_items_from_playlist", t.remove_items_from_playlist),
+            ("remove_items_from_queue", t.remove_items_from_queue),
             ("remove_album_message", t.remove_album_message),
             ("remove_albums_title", t.remove_albums_title),
             ("remove_albums_message", t.remove_albums_message),
@@ -237,6 +278,13 @@ mod tests {
             ("remove_song_message", t.remove_song_message),
             ("remove_songs_title", t.remove_songs_title),
             ("remove_songs_message", t.remove_songs_message),
+            (
+                "remove_items_from_this_playlist",
+                t.remove_items_from_this_playlist,
+            ),
+            ("delete_playlist_message", t.delete_playlist_message),
+            ("save_queue_to", t.save_queue_to),
+            ("add_items_to_library", t.add_items_to_library),
         ]
     }
 

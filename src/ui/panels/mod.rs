@@ -1,5 +1,5 @@
 //! Панели, которые всегда на экране: медиатека слева, плейлист справа, плеер внизу.
 
 mod player_bar;
-mod playlist;
+mod queue;
 mod sidebar;

@@ -13,7 +13,7 @@ use std::{
 
 use super::{
     audio::{self, AudioCmd, AudioEvent},
-    playlist::{RepeatMode, TrackList},
+    queue::{RepeatMode, TrackList},
 };
 use crate::core::library::Track;
 
@@ -77,7 +77,7 @@ pub struct PlayerController {
     volume: Volume,
     /// Растёт при каждом изменении плейлиста (треки, текущий трек, shuffle, повтор):
     /// по нему видно, что плейлист пора сохранить
-    playlist_revision: u64,
+    queue_revision: u64,
 }
 
 impl PlayerController {
@@ -93,7 +93,7 @@ impl PlayerController {
             events,
             position_ms,
             volume: Volume::default(),
-            playlist_revision: 0,
+            queue_revision: 0,
         }
     }
 
@@ -105,8 +105,17 @@ impl PlayerController {
         self.position_ms.load(Ordering::Relaxed)
     }
 
-    pub fn playlist_revision(&self) -> u64 {
-        self.playlist_revision
+    pub fn queue_revision(&self) -> u64 {
+        self.queue_revision
+    }
+
+    /// Связывает очередь с сохранённым плейлистом `playlist` (или развязывает — `None`),
+    /// см. `TrackList::playlist`
+    pub fn link_playlist(&mut self, playlist: Option<u64>) {
+        if self.player.track_list.playlist != playlist {
+            self.player.track_list.playlist = playlist;
+            self.queue_revision += 1;
+        }
     }
 
     pub fn volume(&self) -> Volume {
@@ -219,7 +228,7 @@ impl PlayerController {
         let mut added: Vec<usize> = (first_new..list.tracks.len()).collect();
         fastrand::shuffle(&mut added);
         list.shuffle_order.extend(added);
-        self.playlist_revision += 1;
+        self.queue_revision += 1;
     }
 
     /// Добавляет треки в конец плейлиста. Если ничего ещё не выбрано, текущим становится
@@ -243,8 +252,10 @@ impl PlayerController {
         let list = &mut self.player.track_list;
         list.tracks = tracks;
         list.current_index = None;
+        // Очередь заменили другим содержимым — с прежним плейлистом она больше не связана
+        list.playlist = None;
         list.reshuffle();
-        self.playlist_revision += 1;
+        self.queue_revision += 1;
         // Без текущего трека «следующий» — первый в порядке воспроизведения
         let Some(first) = list.neighbor(1, true) else {
             self.player.current_track = None;
@@ -265,7 +276,7 @@ impl PlayerController {
             .current_index
             .is_some_and(|current| indices.contains(&current));
         self.player.track_list.remove(indices);
-        self.playlist_revision += 1;
+        self.queue_revision += 1;
 
         if removes_current {
             self.player.current_track = None;
@@ -276,6 +287,13 @@ impl PlayerController {
         Ok(())
     }
 
+    /// Очищает очередь: воспроизведение останавливается, текущего трека больше нет
+    pub fn clear(&mut self) -> Result<(), String> {
+        let all = (0..self.player.track_list.tracks.len()).collect();
+        self.link_playlist(None);
+        self.remove_tracks(&all)
+    }
+
     /// Включает или выключает случайный порядок
     pub fn toggle_shuffle(&mut self) {
         let list = &mut self.player.track_list;
@@ -283,7 +301,7 @@ impl PlayerController {
         if list.shuffle {
             list.reshuffle();
         }
-        self.playlist_revision += 1;
+        self.queue_revision += 1;
     }
 
     /// Включает режим повтора; повторное нажатие на уже включённый — выключает
@@ -294,7 +312,7 @@ impl PlayerController {
         } else {
             mode
         };
-        self.playlist_revision += 1;
+        self.queue_revision += 1;
     }
 
     /// Делает текущим трек из списка по его позиции.
@@ -308,7 +326,7 @@ impl PlayerController {
             .ok_or("There is no track with this number in the list")?;
         self.set_current_track(track)?;
         self.player.track_list.current_index = Some(index);
-        self.playlist_revision += 1;
+        self.queue_revision += 1;
         Ok(())
     }
 
