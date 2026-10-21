@@ -3,7 +3,11 @@
 
 use eframe::egui::{self, Align, Ui};
 
-use super::{CentralView, PlayerApp, loading::Destination};
+use super::{
+    PlayerApp,
+    loading::Destination,
+    route::{Route, Section},
+};
 use crate::ui::{i18n::t, theme::TEXT, widgets};
 
 impl PlayerApp {
@@ -14,17 +18,12 @@ impl PlayerApp {
 
             ui.add_space(8.0);
             ui.spacing_mut().item_spacing.y = 2.0;
-            for view in [
-                CentralView::Artists,
-                CentralView::Albums,
-                CentralView::Songs,
-            ] {
-                if widgets::nav_item(ui, view.title(), view.title(), self.view == view).clicked() {
-                    self.set_view(view);
-                    // Пункт меню всегда открывает вид целиком: из профиля исполнителя
+            for section in Section::LIBRARY {
+                let selected = self.route.section() == section;
+                if widgets::nav_item(ui, section.title(), section.title(), selected).clicked() {
+                    // Пункт меню всегда открывает раздел целиком: из профиля исполнителя
                     // или альбома — обратно к верхнему уровню
-                    self.selected_artist = None;
-                    self.selected_album = None;
+                    self.navigate(Route::from(section));
                 }
             }
         });

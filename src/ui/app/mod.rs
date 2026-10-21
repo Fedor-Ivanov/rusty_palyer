@@ -7,6 +7,7 @@ mod library_views;
 mod loading;
 mod now_playing;
 mod playlist_panel;
+mod route;
 mod settings_dialog;
 
 use eframe::egui::{self, Ui};
@@ -15,7 +16,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use self::loading::{Destination, PendingLoad};
+use self::{
+    loading::{Destination, PendingLoad},
+    route::Route,
+};
 use super::{
     covers::CoverCache,
     i18n,
@@ -70,12 +74,8 @@ pub struct PlayerApp {
     playlist_view: TrackListView,
     /// Какой список получает клавиши (⌘A, Esc, Delete) — тот, с которым работали последним
     focus: ListFocus,
-    /// Что показано в центральной области
-    view: CentralView,
-    /// Исполнитель, чьи альбомы открыты в виде «Artists»; `None` — показаны все исполнители
-    selected_artist: Option<String>,
-    /// Открытый альбом — из «Albums» или из профиля исполнителя
-    selected_album: Option<library_views::AlbumKey>,
+    /// Что открыто в центральной области. Меняется только через `navigate`
+    route: Route,
     /// Список треков открытого альбома
     album_tracks_view: TrackListView,
     /// Сетки библиотеки — у каждой своё выделение и своя прокрутка
@@ -98,28 +98,6 @@ struct LibraryGroups {
     revision: Option<u64>,
     artists: Vec<ArtistGroup>,
     albums: Vec<AlbumGroup>,
-}
-
-/// Что показано в центральной области: текущий трек или один из видов библиотеки
-#[derive(Clone, Copy, PartialEq)]
-enum CentralView {
-    NowPlaying,
-    Artists,
-    Albums,
-    Songs,
-}
-
-impl CentralView {
-    /// Название на языке интерфейса
-    fn title(self) -> &'static str {
-        let t = i18n::t();
-        match self {
-            Self::NowPlaying => t.now_playing,
-            Self::Artists => t.artists,
-            Self::Albums => t.albums,
-            Self::Songs => t.songs,
-        }
-    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -164,9 +142,7 @@ impl PlayerApp {
             library_view: TrackListView::new("library"),
             playlist_view: TrackListView::new("playlist"),
             focus: ListFocus::Playlist,
-            view: CentralView::NowPlaying,
-            selected_artist: None,
-            selected_album: None,
+            route: Route::NowPlaying,
             album_tracks_view: TrackListView::new("album_tracks"),
             artists_grid: TileGridView::new("artists"),
             albums_grid: TileGridView::new("albums"),
@@ -184,7 +160,7 @@ impl PlayerApp {
         // Последнего трека нет (первый запуск или его не было при выходе) — в Now Playing
         // показать нечего, открываем альбомы
         if app.controller.player().current_track.is_none() {
-            app.view = CentralView::Albums;
+            app.route = Route::Albums;
         }
         app.controller.set_volume(app.settings.volume());
         i18n::set_language(app.settings.language());
@@ -193,20 +169,6 @@ impl PlayerApp {
             app.start_loading(Source::Files(paths), Destination::LibraryRefresh);
         }
         app
-    }
-
-    /// Переключает центральную область на вид `view`. Поиск относится к виду, который
-    /// был открыт, — при смене вида он очищается
-    fn set_view(&mut self, view: CentralView) {
-        if self.view == view {
-            return;
-        }
-        self.view = view;
-        if !self.search.is_empty() {
-            self.search = library_views::LibrarySearch::default();
-            // Строки Songs во время поиска — найденные треки: выделение относилось к ним
-            self.library_view.clear_selection();
-        }
     }
 
     /// Сохраняет плейлист, если он изменился. Вызывается в конце `logic` (изменения без окна:
@@ -384,7 +346,7 @@ impl eframe::App for PlayerApp {
                 // Появляется и прячется, выезжая снизу: show_collapsible анимирует это сам,
                 // и содержимое над плашкой сдвигается вместе с ней. Высота задана точно —
                 // иначе в первом кадре панель не знает её и прыгает
-                let mut show_bar = self.view != CentralView::NowPlaying
+                let mut show_bar = self.route != Route::NowPlaying
                     && self.controller.player().current_track.is_some();
                 egui::Panel::bottom("now_playing_bar")
                     .frame(egui::Frame::new().inner_margin(egui::Margin {
@@ -399,12 +361,12 @@ impl eframe::App for PlayerApp {
                     .show_separator_line(false)
                     .show_collapsible(ui, &mut show_bar, |ui| {
                         if self.render_now_playing_bar(ui) {
-                            self.set_view(CentralView::NowPlaying);
+                            self.navigate(Route::NowPlaying);
                         }
                     });
 
-                match self.view {
-                    CentralView::NowPlaying => {
+                match self.route {
+                    Route::NowPlaying => {
                         if let Some(backdrop) = self.track_backdrop(ui) {
                             root_painter.set(backdrop_slot, backdrop);
                         }
@@ -418,7 +380,7 @@ impl eframe::App for PlayerApp {
                             })
                         });
                     }
-                    view => self.render_library_view(ui, view),
+                    _ => self.render_library_view(ui),
                 }
             });
 

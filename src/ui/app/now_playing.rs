@@ -3,7 +3,11 @@
 
 use eframe::egui::{self, CursorIcon, Id, Rect, RichText, Sense, Shape, Ui, pos2, vec2};
 
-use super::{CentralView, PlayerApp, library_views::AlbumKey, loading::Destination};
+use super::{
+    PlayerApp,
+    loading::Destination,
+    route::{AlbumKey, Route},
+};
 use crate::library::{
     Track,
     groups::{self, AlbumGroup},
@@ -172,16 +176,10 @@ impl PlayerApp {
             );
         });
 
-        // Переход — как из меню библиотеки: вид целиком, без прошлых вложенных страниц
         if open_artist && let Some(artist) = artist_in_library {
-            self.set_view(CentralView::Artists);
-            self.selected_artist = Some(artist);
-            self.selected_album = None;
+            self.navigate(Route::Artist(artist));
         } else if open_album && let Some(album) = album_in_library {
-            self.set_view(CentralView::Albums);
-            self.selected_artist = None;
-            self.selected_album = Some(album);
-            self.album_tracks_view.clear_selection();
+            self.navigate(Route::Album(album));
         }
     }
 

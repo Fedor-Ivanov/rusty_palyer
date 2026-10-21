@@ -4,7 +4,10 @@ use eframe::egui::{self, Align, Align2, FontId, Label, Rect, RichText, Sense, Ui
 
 use std::{collections::HashSet, path::PathBuf};
 
-use super::{CentralView, LibraryGroups, ListFocus, PlayerApp};
+use super::{
+    LibraryGroups, ListFocus, PlayerApp,
+    route::{AlbumKey, Route, Section},
+};
 use crate::{
     library::{
         Track,
@@ -26,31 +29,8 @@ const ARTIST_NAME_SIZE: f32 = 30.0;
 /// Обложка на странице альбома
 const ALBUM_PAGE_COVER_SIZE: f32 = 160.0;
 
-/// Какой альбом открыт. Альбом — пара «название + исполнитель», как при группировке;
-/// хранятся имена, а не номер: номера альбомов меняются вместе с библиотекой
-#[derive(Clone)]
-pub(super) struct AlbumKey {
-    title: String,
-    artist: String,
-}
-
-impl AlbumKey {
-    pub(super) fn of(album: &AlbumGroup) -> Self {
-        Self {
-            title: album.title.clone(),
-            artist: album.artist.clone(),
-        }
-    }
-
-    /// Сравнение без учёта регистра — как при группировке
-    fn matches(&self, album: &AlbumGroup) -> bool {
-        album.title.to_lowercase() == self.title.to_lowercase()
-            && album.artist.to_lowercase() == self.artist.to_lowercase()
-    }
-}
-
 /// Поиск в виде библиотеки. Запрос один на открытый вид: при смене вида он очищается
-/// (см. `PlayerApp::set_view`). Artists ищет по имени исполнителя, Albums — по названию
+/// (см. `PlayerApp::navigate`). Artists ищет по имени исполнителя, Albums — по названию
 /// альбома, Songs — по названию трека и имени исполнителя
 #[derive(Default)]
 pub(super) struct LibrarySearch {
@@ -110,68 +90,61 @@ enum Target {
 }
 
 impl PlayerApp {
-    /// Вид библиотеки `view` во всю центральную область
-    pub(super) fn render_library_view(&mut self, ui: &mut Ui, view: CentralView) {
+    /// Открытая страница медиатеки (`self.route`) во всю центральную область
+    pub(super) fn render_library_view(&mut self, ui: &mut Ui) {
         egui::Frame::new()
             .inner_margin(16.0)
-            .show(ui, |ui| self.render_breadcrumbs(ui, view));
-        match (view, &self.selected_album) {
-            (CentralView::Albums | CentralView::Artists, Some(album)) => {
-                let album = album.clone();
-                self.render_album_page(ui, &album);
+            .show(ui, |ui| self.render_breadcrumbs(ui));
+        match self.route.clone() {
+            Route::Album(album) | Route::ArtistAlbum { album, .. } => {
+                self.render_album_page(ui, &album)
             }
-            (CentralView::Songs, _) => self.render_songs(ui),
-            (CentralView::Artists, None) => self.render_artists(ui),
-            (CentralView::Albums, None) => self.render_albums(ui),
-            (CentralView::NowPlaying, _) => {}
+            Route::Artist(artist) => self.render_artist_profile(ui, &artist),
+            Route::Artists => self.render_artists(ui),
+            Route::Albums => self.render_albums(ui),
+            Route::Songs => self.render_songs(ui),
+            Route::NowPlaying => {}
         }
     }
 
-    /// Заголовок вида. Внутри исполнителя или альбома — «хлебные крошки», каждая ведёт
+    /// Заголовок страницы. Внутри исполнителя или альбома — «хлебные крошки», каждая ведёт
     /// на свой уровень: «Albums › Альбом», «Artists › Исполнитель › Альбом»
-    fn render_breadcrumbs(&mut self, ui: &mut Ui, view: CentralView) {
-        let artist = self.selected_artist.clone();
-        let album = self
-            .selected_album
-            .as_ref()
-            .map(|album| album.title.clone());
-        match (view, artist, album) {
-            (CentralView::Albums, _, Some(album)) => {
-                if widgets::breadcrumb_title(ui, &[view.title()], &album).is_some() {
-                    self.selected_album = None;
+    fn render_breadcrumbs(&mut self, ui: &mut Ui) {
+        let section = self.route.section();
+        let title = section.title();
+        let target = match self.route.clone() {
+            Route::Album(album) => {
+                widgets::breadcrumb_title(ui, &[title], &album.title).map(|_| Route::Albums)
+            }
+            Route::ArtistAlbum { artist, album } => {
+                match widgets::breadcrumb_title(ui, &[title, &artist], &album.title) {
+                    Some(0) => Some(Route::Artists),
+                    Some(_) => Some(Route::Artist(artist)),
+                    None => None,
                 }
             }
-            (CentralView::Artists, Some(artist), Some(album)) => {
-                match widgets::breadcrumb_title(ui, &[view.title(), &artist], &album) {
-                    Some(0) => {
-                        self.selected_artist = None;
-                        self.selected_album = None;
-                    }
-                    Some(_) => self.selected_album = None,
-                    None => {}
-                }
+            Route::Artist(artist) => {
+                widgets::breadcrumb_title(ui, &[title], &artist).map(|_| Route::Artists)
             }
-            (CentralView::Artists, Some(artist), None) => {
-                if widgets::breadcrumb_title(ui, &[view.title()], &artist).is_some() {
-                    self.selected_artist = None;
-                }
-            }
-            // Верхний уровень вида — с полем поиска справа. В пустой библиотеке искать нечего
-            (CentralView::Artists | CentralView::Albums | CentralView::Songs, _, _)
-                if !self.library.tracks().is_empty() =>
-            {
-                self.render_title_with_search(ui, view);
+            // Верхний уровень раздела — с полем поиска справа. В пустой медиатеке искать нечего
+            Route::Artists | Route::Albums | Route::Songs if !self.library.tracks().is_empty() => {
+                self.render_title_with_search(ui, section);
+                None
             }
             _ => {
-                widgets::block_title(ui, view.title(), Align::LEFT, TEXT);
+                widgets::block_title(ui, title, Align::LEFT, TEXT);
+                None
             }
+        };
+        if let Some(route) = target {
+            self.navigate(route);
         }
     }
 
     /// Заголовок вида слева и поле поиска справа. У Songs рядом с заголовком — число треков,
     /// как «Playlist · N tracks»; во время поиска — сколько найдено: «· 3 of 120 tracks»
-    fn render_title_with_search(&mut self, ui: &mut Ui, view: CentralView) {
-        let note = (view == CentralView::Songs).then(|| {
+    fn render_title_with_search(&mut self, ui: &mut Ui, section: Section) {
+        let note = (section == Section::Songs).then(|| {
             self.refresh_found_songs();
             let total = self.library.tracks().len();
             let tracks = t().count(total, &t().track_count);
@@ -190,17 +163,17 @@ impl PlayerApp {
             }
         });
         let query = &mut self.search.query;
-        let changed = widgets::title_with_search(ui, view.title(), query, |ui| match &note {
+        let changed = widgets::title_with_search(ui, section.title(), query, |ui| match &note {
             Some(note) => {
-                widgets::block_title_with_note(ui, view.title(), note);
+                widgets::block_title_with_note(ui, section.title(), note);
             }
             None => {
-                widgets::block_title(ui, view.title(), Align::LEFT, TEXT);
+                widgets::block_title(ui, section.title(), Align::LEFT, TEXT);
             }
         });
         // Выделение сеток сбрасывается само — запрос входит в их scope. Список Songs
         // показывает другие треки — его выделение ни на что не указывает
-        if changed && view == CentralView::Songs {
+        if changed && section == Section::Songs {
             self.library_view.clear_selection();
         }
     }
@@ -252,14 +225,15 @@ impl PlayerApp {
         }
     }
 
+    /// Профиль исполнителя: шапка и его альбомы сеткой
+    fn render_artist_profile(&mut self, ui: &mut Ui, artist: &str) {
+        self.render_artist_header(ui, artist);
+        self.render_album_grid(ui, "artist_albums", Some(artist));
+    }
+
     /// Исполнители сеткой: картинка (пока заглушка с первой буквой имени) и имя.
-    /// Клик по исполнителю открывает его альбомы
+    /// Клик по исполнителю открывает его профиль
     fn render_artists(&mut self, ui: &mut Ui) {
-        if let Some(artist) = self.selected_artist.clone() {
-            self.render_artist_header(ui, &artist);
-            self.render_album_grid(ui, "artist_albums", Some(&artist));
-            return;
-        }
         self.refresh_groups();
         let artists = &self.groups.artists;
         if artists.is_empty() {
@@ -307,7 +281,9 @@ impl PlayerApp {
         }
 
         if let Some(index) = response.opened {
-            self.selected_artist = Some(self.groups.artists[shown[index]].name.clone());
+            self.navigate(Route::Artist(
+                self.groups.artists[shown[index]].name.clone(),
+            ));
         } else if let Some(action) = action {
             // Исполнители — в порядке сетки, их треки — альбом за альбомом
             let names: Vec<String> = self
@@ -412,8 +388,8 @@ impl PlayerApp {
     fn render_album_page(&mut self, ui: &mut Ui, key: &AlbumKey) {
         self.refresh_groups();
         let Some(album) = self.groups.albums.iter().find(|album| key.matches(album)) else {
-            // Альбома больше нет — его треки убрали из библиотеки
-            self.selected_album = None;
+            // Альбома больше нет — его треки убрали из медиатеки: уровень выше
+            self.navigate(self.route.parent());
             return;
         };
         let indices = album.tracks.clone();
@@ -526,9 +502,7 @@ impl PlayerApp {
         if open_artist {
             // Как из «Now Playing»: профиль исполнителя в Artists, крошки
             // «Artists › Исполнитель» ведут оттуда дальше
-            self.set_view(CentralView::Artists);
-            self.selected_artist = Some(artist);
-            self.selected_album = None;
+            self.navigate(Route::Artist(artist));
         } else if play_all {
             self.playlist_view.clear_selection();
             let result = self.controller.play_all(self.playable_tracks(&indices));
@@ -557,6 +531,8 @@ impl PlayerApp {
     /// этого исполнителя (имя без учёта регистра, как при группировке)
     fn render_album_grid(&mut self, ui: &mut Ui, id_salt: &str, artist: Option<&str>) {
         self.refresh_groups();
+        // Чей профиль — для перехода в альбом из него; дальше имя нужно для сравнения
+        let profile = artist.map(str::to_owned);
         let artist = artist.map(str::to_lowercase);
         // Поиск по названию — только во всех альбомах, в профиле исполнителя поля нет
         let query = match artist {
@@ -663,13 +639,11 @@ impl PlayerApp {
         }
 
         if let Some(index) = response.opened {
-            let album = AlbumKey {
-                title: albums[index].title.clone(),
-                artist: albums[index].artist.clone(),
-            };
-            self.selected_album = Some(album);
-            // Выделение относилось к трекам прошлого альбома
-            self.album_tracks_view.clear_selection();
+            let album = AlbumKey::of(albums[index]);
+            self.navigate(match profile {
+                Some(artist) => Route::ArtistAlbum { artist, album },
+                None => Route::Album(album),
+            });
         } else if let Some((action, target)) = action {
             // Альбомы — в порядке сетки, их треки — альбом за альбомом
             let targets: Vec<usize> = match target {
