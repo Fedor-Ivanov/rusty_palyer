@@ -80,6 +80,7 @@ pub struct Texts {
     pub track_count: Plural,
     pub song_count: Plural,
     pub album_count: Plural,
+    pub playlist_count: Plural,
     pub artist_count: Plural,
     /// «…и ещё N файлов не удалось добавить»
     pub more_file_count: Plural,
@@ -162,6 +163,10 @@ pub struct Texts {
     pub delete_playlist_title: &'static str,
     /// `{playlist}`
     pub delete_playlist_message: &'static str,
+    pub delete_playlists_title: &'static str,
+    pub delete_playlists_message: &'static str,
+    /// «Удалить 3 плейлиста» — пункт меню нескольких выделенных
+    pub delete_items: &'static str,
 
     // ---- настройки
     pub language: &'static str,
@@ -280,7 +285,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     /// Шаблоны с подстановками — чтобы сравнить их наборы `{…}` в языках
-    fn templates(t: &Texts) -> [(&'static str, &'static str); 21] {
+    fn templates(t: &Texts) -> [(&'static str, &'static str); 24] {
         [
             ("found_of", t.found_of),
             ("adding_progress", t.adding_progress),
@@ -304,6 +309,9 @@ mod tests {
                 t.remove_items_from_this_playlist,
             ),
             ("delete_playlist_message", t.delete_playlist_message),
+            ("delete_playlists_title", t.delete_playlists_title),
+            ("delete_playlists_message", t.delete_playlists_message),
+            ("delete_items", t.delete_items),
             ("save_queue_to", t.save_queue_to),
             ("add_items_to_library", t.add_items_to_library),
         ]

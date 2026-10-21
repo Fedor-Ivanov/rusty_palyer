@@ -26,6 +26,7 @@ pub static TEXTS: Texts = Texts {
     track_count: Plural::two("piste", "pistes"),
     song_count: Plural::two("morceau", "morceaux"),
     album_count: Plural::two("album", "albums"),
+    playlist_count: Plural::two("playlist", "playlists"),
     artist_count: Plural::two("artiste", "artistes"),
     more_file_count: Plural::two("autre fichier", "autres fichiers"),
 
@@ -90,6 +91,9 @@ pub static TEXTS: Texts = Texts {
     delete_playlist_title: "Supprimer la playlist ?",
     delete_playlist_message: "« {playlist} » sera supprimée. \
                               Les morceaux eux-mêmes ne seront pas supprimés.",
+    delete_playlists_title: "Supprimer {playlists} ?",
+    delete_playlists_message: "{playlists} seront supprimées. Les morceaux eux-mêmes ne seront pas supprimés.",
+    delete_items: "Supprimer {items}",
 
     language: "Langue",
     version: "Version",

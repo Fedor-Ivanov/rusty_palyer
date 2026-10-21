@@ -108,30 +108,39 @@ impl PlayerApp {
         }
     }
 
-    /// Подтверждение удаления плейлиста — пока ждём ответа
+    /// Подтверждение удаления плейлистов — пока ждём ответа. Один плейлист называется
+    /// по имени, несколько — числом
     pub(crate) fn render_playlist_deletion_dialog(&mut self, ctx: &egui::Context) {
-        let Some(id) = self.pending_playlist_deletion else {
-            return;
+        // Уже удалённые (например, на другой странице) не считаем
+        let playlists = &self.core.playlists;
+        self.pending_playlist_deletion
+            .retain(|&id| playlists.get(id).is_some());
+        let (title, message) = match self.pending_playlist_deletion.as_slice() {
+            [] => return,
+            [id] => {
+                let name = playlists.get(*id).map_or("", |playlist| &playlist.name);
+                (
+                    t().delete_playlist_title.to_owned(),
+                    fill(t().delete_playlist_message, &[("playlist", name)]),
+                )
+            }
+            ids => {
+                let count = t().count(ids.len(), &t().playlist_count);
+                let values = [("playlists", count.as_str())];
+                (
+                    fill(t().delete_playlists_title, &values),
+                    fill(t().delete_playlists_message, &values),
+                )
+            }
         };
-        let Some(playlist) = self.core.playlists.get(id) else {
-            // Плейлиста уже нет — спрашивать не о чем
-            self.pending_playlist_deletion = None;
-            return;
-        };
-        let message = fill(t().delete_playlist_message, &[("playlist", &playlist.name)]);
-        let answer = components::confirm_dialog(
-            ctx,
-            "delete_playlist",
-            t().delete_playlist_title,
-            &message,
-            t().delete,
-        );
+        let answer =
+            components::confirm_dialog(ctx, "delete_playlist", &title, &message, t().delete);
         match answer {
             components::Confirm::Pending => {}
-            components::Confirm::Cancelled => self.pending_playlist_deletion = None,
+            components::Confirm::Cancelled => self.pending_playlist_deletion.clear(),
             components::Confirm::Confirmed => {
-                self.pending_playlist_deletion = None;
-                self.dispatch(Action::DeletePlaylist(id));
+                let ids = std::mem::take(&mut self.pending_playlist_deletion);
+                self.dispatch(Action::DeletePlaylists(ids));
             }
         }
     }

@@ -111,7 +111,7 @@ impl PlayerApp {
             self.dispatch(match button {
                 HeaderButton::Play => Action::PlayPlaylist(id),
                 HeaderButton::Rename => Action::RequestRenamePlaylist(id),
-                HeaderButton::Delete => Action::RequestPlaylistDeletion(id),
+                HeaderButton::Delete => Action::RequestPlaylistDeletion(vec![id]),
             });
             return;
         }

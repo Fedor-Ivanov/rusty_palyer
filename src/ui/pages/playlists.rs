@@ -15,7 +15,7 @@ use crate::{
         app::{ListFocus, PlayerApp},
         components::{self, TileLine},
         covers::CoverSize,
-        i18n::t,
+        i18n::{fill, t},
         navigation::Route,
     },
 };
@@ -27,12 +27,14 @@ pub(crate) const PLAYLIST_COVER_TRACKS: usize = 8;
 enum PlaylistMenuItem {
     Play,
     Rename,
+    /// Удалить выделенные плейлисты — один или несколько
     Delete,
 }
 
 impl PlayerApp {
     /// Все сохранённые плейлисты сеткой. Клик открывает плейлист, кнопка на обложке играет
-    /// его; из меню — сыграть, переименовать, удалить
+    /// его; из меню — сыграть, переименовать, удалить. Если выделено несколько — меню только
+    /// удаляет их все
     pub(crate) fn render_playlists(&mut self, ui: &mut Ui) {
         let all = self.core.playlists.all();
         if all.is_empty() {
@@ -92,26 +94,25 @@ impl PlayerApp {
         }
 
         let id_of = |index: usize| all[shown[index]].id;
+        // Меню по правому клику и Delete действуют на выделение: правый клик выделяет
+        // плитку под курсором, если она не была выделена
+        let selected = || {
+            self.playlists_grid
+                .selection()
+                .iter()
+                .map(|&index| id_of(index))
+                .collect::<Vec<_>>()
+        };
         let action = if let Some(index) = response.opened {
             Some(Action::Navigate(Route::Playlist(id_of(index))))
         } else if let Some((item, id)) = menu {
             Some(match item {
                 PlaylistMenuItem::Play => Action::PlayPlaylist(id),
                 PlaylistMenuItem::Rename => Action::RequestRenamePlaylist(id),
-                PlaylistMenuItem::Delete => Action::RequestPlaylistDeletion(id),
+                PlaylistMenuItem::Delete => Action::RequestPlaylistDeletion(selected()),
             })
         } else if response.delete {
-            // Удаляем по одному: у каждого плейлиста своё подтверждение
-            match self
-                .playlists_grid
-                .selection()
-                .iter()
-                .collect::<Vec<_>>()
-                .as_slice()
-            {
-                [index] => Some(Action::RequestPlaylistDeletion(id_of(**index))),
-                _ => None,
-            }
+            Some(Action::RequestPlaylistDeletion(selected()))
         } else {
             None
         };
@@ -130,11 +131,20 @@ pub(crate) fn cover_candidates(tracks: &[crate::core::library::Track]) -> Vec<Pa
         .collect()
 }
 
-/// Контекстное меню плейлиста — действует на плейлист под курсором
+/// Контекстное меню плейлиста. Выделен один — сыграть, переименовать, удалить его;
+/// несколько — только удалить их все: сыграть или переименовать сразу несколько нельзя
 fn playlist_context_menu(tile: &components::Tile) -> Option<PlaylistMenuItem> {
     let mut chosen = None;
     tile.response.context_menu(|ui| {
         components::menu_style(ui);
+        if tile.selected > 1 {
+            let items = t().count(tile.selected, &t().playlist_count);
+            let label = fill(t().delete_items, &[("items", &items)]);
+            if components::menu_item(ui, &label).clicked() {
+                chosen = Some(PlaylistMenuItem::Delete);
+            }
+            return;
+        }
         for (label, item) in [
             (t().play, PlaylistMenuItem::Play),
             (t().rename, PlaylistMenuItem::Rename),

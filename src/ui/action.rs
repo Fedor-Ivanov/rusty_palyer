@@ -106,9 +106,9 @@ pub(crate) enum Action {
         id: PlaylistId,
         name: String,
     },
-    /// Спросить, удалить ли плейлист (см. `dialogs::playlist`)
-    RequestPlaylistDeletion(PlaylistId),
-    DeletePlaylist(PlaylistId),
+    /// Спросить, удалить ли плейлисты (см. `dialogs::playlist`)
+    RequestPlaylistDeletion(Vec<PlaylistId>),
+    DeletePlaylists(Vec<PlaylistId>),
 
     // ---- плеер
     /// Играет — пауза, иначе — играть
@@ -298,12 +298,14 @@ impl PlayerApp {
                 let result = self.core.playlists.rename(id, &name);
                 self.report_error(result);
             }
-            Action::RequestPlaylistDeletion(id) => self.pending_playlist_deletion = Some(id),
-            Action::DeletePlaylist(id) => {
-                let result = self.core.playlists.delete(id);
+            Action::RequestPlaylistDeletion(ids) => self.pending_playlist_deletion = ids,
+            Action::DeletePlaylists(ids) => {
+                let result = self.core.playlists.delete(&ids);
                 self.report_error(result);
-                // Была открыта его страница — к списку плейлистов
-                if self.route == Route::Playlist(id) {
+                // Была открыта страница удалённого — к списку плейлистов
+                if let Route::Playlist(id) = self.route
+                    && ids.contains(&id)
+                {
                     self.navigate(Route::Playlists);
                 }
             }

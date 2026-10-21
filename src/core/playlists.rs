@@ -150,8 +150,9 @@ impl Playlists {
         self.changed()
     }
 
-    pub fn delete(&mut self, id: PlaylistId) -> Result<(), String> {
-        self.items.retain(|playlist| playlist.id != id);
+    /// Удаляет плейлисты `ids` — одной записью файла
+    pub fn delete(&mut self, ids: &[PlaylistId]) -> Result<(), String> {
+        self.items.retain(|playlist| !ids.contains(&playlist.id));
         self.changed()
     }
 
@@ -258,7 +259,7 @@ mod tests {
         assert_eq!(restored.get(party).unwrap().name, "Weekend");
 
         // Удалённый номер не переиспользуется — даже после перезапуска
-        restored.delete(chill).unwrap();
+        restored.delete(&[chill]).unwrap();
         let next = restored.create("New", Vec::new()).unwrap();
         assert!(next > party);
         let names: Vec<_> = restored.all().iter().map(|p| p.name.as_str()).collect();

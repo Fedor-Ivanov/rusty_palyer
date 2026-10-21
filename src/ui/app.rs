@@ -68,8 +68,8 @@ pub struct PlayerApp {
     pub(crate) pending_removal: Option<LibraryRemoval>,
     /// Окно названия плейлиста, пока открыто
     pub(crate) name_dialog: Option<NameDialog>,
-    /// Плейлист, удаление которого ждёт подтверждения
-    pub(crate) pending_playlist_deletion: Option<PlaylistId>,
+    /// Плейлисты, удаление которых ждёт подтверждения; пусто — не ждём
+    pub(crate) pending_playlist_deletion: Vec<PlaylistId>,
     /// Сетка сохранённых плейлистов и список треков открытого плейлиста
     pub(crate) playlists_grid: TileGridView,
     pub(crate) playlist_tracks_view: TrackListView,
@@ -126,7 +126,7 @@ impl PlayerApp {
             search: LibrarySearch::default(),
             pending_removal: None,
             name_dialog: None,
-            pending_playlist_deletion: None,
+            pending_playlist_deletion: Vec::new(),
             playlists_grid: TileGridView::new("playlists"),
             playlist_tracks_view: TrackListView::new("playlist_tracks"),
             covers: CoverCache::new(),

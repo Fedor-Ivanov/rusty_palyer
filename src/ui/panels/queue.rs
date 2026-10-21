@@ -81,9 +81,10 @@ impl PlayerApp {
             return;
         }
 
-        // Сколько выделенных треков не из медиатеки (добавлены кнопкой «+» мимо неё) и сколько
-        // из неё — для пунктов «Add to library» и «Remove from library». Меню открывается
-        // после выделения, так что выделение начала кадра — то, к которому оно относится
+        // Сколько выделенных треков не из медиатеки (добавлены кнопкой «+» мимо неё) — для
+        // пункта «Add to library». Удалить из медиатеки отсюда нельзя: очередь — про то, что
+        // слушаем, а не про медиатеку. Меню открывается после выделения, так что выделение
+        // начала кадра — то, к которому оно относится
         let list = &self.core.controller.player().track_list;
         let library_paths = self.core.library.paths();
         let outside_library = self
@@ -93,11 +94,9 @@ impl PlayerApp {
             .filter_map(|&index| list.tracks.get(index))
             .filter(|track| !library_paths.contains(&track.path))
             .count();
-        let in_library = self.queue_view.selection().len() - outside_library;
         // Меню знает только, сколько строк выделено: какие — узнаём после списка
         let mut remove = false;
         let mut add_to_library = false;
-        let mut remove_from_library = false;
         let current = list.current_index;
         let response = self.queue_view.show(
             ui,
@@ -118,16 +117,6 @@ impl PlayerApp {
                         add_to_library = true;
                     }
                 }
-                if in_library > 0 {
-                    let label = t().for_tracks(
-                        t().remove_from_library,
-                        t().remove_items_from_library,
-                        in_library,
-                    );
-                    if components::menu_item(ui, &label).clicked() {
-                        remove_from_library = true;
-                    }
-                }
                 let label =
                     t().for_tracks(t().remove_from_queue, t().remove_items_from_queue, selected);
                 if components::menu_item(ui, &label).clicked() {
@@ -142,18 +131,6 @@ impl PlayerApp {
         if add_to_library {
             let selected = self.queue_view.selection().iter().copied().collect();
             self.dispatch(Action::AddQueueTracksToLibrary(selected));
-        } else if remove_from_library {
-            // Удаление из медиатеки — с подтверждением, как в Songs
-            let queue = &self.core.controller.player().track_list.tracks;
-            let paths = self
-                .queue_view
-                .selection()
-                .iter()
-                .filter_map(|&index| queue.get(index))
-                .map(|track| track.path.clone())
-                .collect();
-            let indices = self.core.library.indices_of(&paths);
-            self.dispatch(Action::RequestSongsRemoval(indices));
         } else if remove || response.delete {
             let selected = self.queue_view.selection().clone();
             self.dispatch(Action::RemoveFromQueue(selected));

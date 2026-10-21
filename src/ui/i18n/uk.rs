@@ -17,6 +17,7 @@ pub static TEXTS: Texts = Texts {
     track_count: Plural::three("трек", "треки", "треків"),
     song_count: Plural::three("пісня", "пісні", "пісень"),
     album_count: Plural::three("альбом", "альбоми", "альбомів"),
+    playlist_count: Plural::three("плейлист", "плейлисти", "плейлистів"),
     artist_count: Plural::three("артист", "артисти", "артистів"),
     more_file_count: Plural::three("файл", "файли", "файлів"),
 
@@ -80,6 +81,9 @@ pub static TEXTS: Texts = Texts {
     playlist_name_hint: "Назва плейлиста",
     delete_playlist_title: "Видалити плейлист?",
     delete_playlist_message: "Плейлист «{playlist}» буде видалено. Самі треки не видаляються.",
+    delete_playlists_title: "Видалити {playlists}?",
+    delete_playlists_message: "Вибрані плейлисти ({playlists}) буде видалено. Самі треки не видаляються.",
+    delete_items: "Видалити {items}",
 
     language: "Мова",
     version: "Версія",
