@@ -23,7 +23,7 @@ Unicode true
 ; Пути считаются от папки скрипта
 !define ROOT ".."
 !define APP_BINARY "${ROOT}\target\x86_64-pc-windows-gnu\release\${APP_EXE}"
-!define APP_ICON "${ROOT}\assets\app_icon.ico"
+!define APP_ICON "${ROOT}\assets\images\app_icon.ico"
 
 Name "${APP_NAME}"
 OutFile "${ROOT}\target\installer\${APP_NAME} Setup ${VERSION}.exe"

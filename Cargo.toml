@@ -7,7 +7,7 @@ edition = "2024"
 [package.metadata.bundle]
 name = "Rusty Player"
 identifier = "com.fedor-ivanov.rusty-player"
-icon = ["assets/AppIcon.icns"]
+icon = ["assets/images/AppIcon.icns"]
 category = "public.app-category.music"
 short_description = "Audio player"
 
