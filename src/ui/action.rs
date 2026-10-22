@@ -206,8 +206,7 @@ impl PlayerApp {
                 tracks,
             } => self.request_group_removal(kind, names, &tracks),
             Action::RemoveFromLibrary(paths) => {
-                let result = self.core.library.remove_paths(&paths);
-                self.report_error(result);
+                self.core.library.remove_paths(&paths);
                 // Номера треков медиатеки сдвинулись — выделение в списках ни на что не указывает
                 self.library_view.clear_selection();
                 self.album_tracks_view.clear_selection();
@@ -233,8 +232,7 @@ impl PlayerApp {
             }
 
             Action::AddQueueTracksToLibrary(indices) => {
-                let result = self.core.add_queue_tracks_to_library(&indices);
-                self.report_error(result);
+                self.core.add_queue_tracks_to_library(&indices);
             }
 
             Action::RequestSaveQueue => {
@@ -279,8 +277,7 @@ impl PlayerApp {
                 self.report_error(result);
             }
             Action::AddPlaylistTracksToLibrary { id, indices } => {
-                let result = self.core.add_playlist_tracks_to_library(id, &indices);
-                self.report_error(result);
+                self.core.add_playlist_tracks_to_library(id, &indices);
             }
             Action::RemoveFromPlaylist { id, indices } => {
                 let result = self.core.playlists.remove_tracks(id, &indices);

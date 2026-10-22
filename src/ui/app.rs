@@ -187,6 +187,11 @@ impl PlayerApp {
 }
 
 impl eframe::App for PlayerApp {
+    /// Выход: медиатека пишется в фоне — дожидаемся, чтобы последние изменения сохранились
+    fn on_exit(&mut self) {
+        self.core.flush();
+    }
+
     /// Окно прозрачное: под ним система рисует размытие, поэтому сами ничего не заливаем
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         [0.0; 4]
@@ -206,6 +211,10 @@ impl eframe::App for PlayerApp {
         // Пришёл текст песни из LRCLIB — найдём текст текущего трека заново
         if self.core.lyrics.poll() {
             self.current_lyrics = None;
+        }
+        // Медиатека: ответ фоновой проверки пропавших файлов, ошибки фоновой записи
+        if let Some(e) = self.core.poll_background() {
+            self.report_error(Err(e));
         }
         self.poll_loaders(ctx);
         self.apply_actions(ctx);

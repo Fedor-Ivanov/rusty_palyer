@@ -1,15 +1,22 @@
 //! Библиотека — треки, которые пользователь добавил «насовсем». Хранится между запусками
 //! списком путей и тегов в JSON в папке данных приложения; сами файлы остаются на своих местах.
+//!
+//! Медиатека бывает огромной, поэтому медленное — в фоне: сохранение (файл переписывается
+//! целиком) и проверка, какие файлы пропали с диска (по запросу к диску на трек).
 
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeSet, HashSet},
     fs,
     path::PathBuf,
+    sync::{
+        Arc,
+        mpsc::{self, Receiver},
+    },
 };
 
 use super::Track;
-use crate::core::storage::write_atomically;
+use crate::core::storage::BackgroundWriter;
 
 const FILE_NAME: &str = "library.json";
 /// Версия формата файла. 2 — в треках появился год, 3 — номера трека и диска,
@@ -17,20 +24,33 @@ const FILE_NAME: &str = "library.json";
 /// (см. `outdated_paths`)
 const FORMAT_VERSION: u32 = 4;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 struct Stored {
     version: u32,
     tracks: Vec<Track>,
 }
 
+/// То же, что `Stored`, для записи: треки — общим списком, без копии на каждое сохранение
+#[derive(Serialize)]
+struct Snapshot {
+    version: u32,
+    tracks: Arc<Vec<Track>>,
+}
+
 pub struct Library {
-    tracks: Vec<Track>,
+    /// Общий с фоновой записью: она держит снимок, пока пишет. Изменение во время записи
+    /// копирует список (`Arc::make_mut`), иначе копии нет
+    tracks: Arc<Vec<Track>>,
     /// Пути всех треков — чтобы не добавить один файл дважды
     paths: HashSet<PathBuf>,
-    /// Файлы, которых не оказалось на диске при загрузке: их переместили или удалили
+    /// Файлы, которых не оказалось на диске при загрузке: их переместили или удалили.
+    /// Заполняется фоновой проверкой (`check_missing_in_background`); до неё пусто
     missing: HashSet<PathBuf>,
-    /// Куда сохранять; `None` — папка данных недоступна, библиотека живёт только до выхода
-    file: Option<PathBuf>,
+    /// Ответ фоновой проверки пропавших файлов, пока он не пришёл
+    missing_check: Option<Receiver<HashSet<PathBuf>>>,
+    /// Фоновая запись в файл библиотеки; `None` — папка данных недоступна, библиотека
+    /// живёт только до выхода
+    writer: Option<BackgroundWriter<Snapshot>>,
     /// Версия формата, с которой сохранять. Пока старая библиотека не перечитана из тегов,
     /// сохраняется со старой версией — иначе после перезапуска её бы сочли обновлённой
     version: u32,
@@ -43,15 +63,19 @@ impl Library {
     /// Загружает библиотеку из папки данных `dir`. Файла нет — пустая библиотека.
     /// Вторым значением — ошибка для показа пользователю, если что-то пошло не так.
     pub fn load(dir: Option<PathBuf>) -> (Self, Option<String>) {
+        let file = dir.map(|dir| dir.join(FILE_NAME));
         let mut library = Self {
-            tracks: Vec::new(),
+            tracks: Arc::new(Vec::new()),
             paths: HashSet::new(),
             missing: HashSet::new(),
-            file: dir.map(|dir| dir.join(FILE_NAME)),
+            missing_check: None,
+            writer: file
+                .clone()
+                .map(|file| BackgroundWriter::new(file, "library")),
             version: FORMAT_VERSION,
             revision: 0,
         };
-        let Some(file) = &library.file else {
+        let Some(file) = &file else {
             return (
                 library,
                 Some("Could not find a folder to store the library: it won't be saved".into()),
@@ -81,20 +105,58 @@ impl Library {
             }
         };
 
-        library.missing = stored
-            .tracks
-            .iter()
-            .filter(|track| !track.path.exists())
-            .map(|track| track.path.clone())
-            .collect();
         library.paths = stored.tracks.iter().map(|t| t.path.clone()).collect();
-        library.tracks = stored.tracks;
+        library.tracks = Arc::new(stored.tracks);
         library.version = stored.version;
         (library, None)
     }
 
     pub fn tracks(&self) -> &[Track] {
         &self.tracks
+    }
+
+    /// Проверяет в фоне, каких файлов нет на диске: на огромной медиатеке это секунды,
+    /// и запуск их не ждёт. Пока ответа нет, все треки считаются на месте. `wake` будит
+    /// приложение, когда ответ готов (см. `poll_missing`)
+    pub fn check_missing_in_background(&mut self, wake: impl Fn() + Send + 'static) {
+        let paths: Vec<PathBuf> = self.tracks.iter().map(|t| t.path.clone()).collect();
+        let (sender, receiver) = mpsc::channel();
+        self.missing_check = Some(receiver);
+        std::thread::spawn(move || {
+            let missing = paths.into_iter().filter(|path| !path.exists()).collect();
+            let _ = sender.send(missing);
+            wake();
+        });
+    }
+
+    /// Забирает ответ фоновой проверки, если он пришёл. `true` — пометки пропавших
+    /// файлов обновились
+    pub fn poll_missing(&mut self) -> bool {
+        let Some(receiver) = &self.missing_check else {
+            return false;
+        };
+        let Ok(missing) = receiver.try_recv() else {
+            return false;
+        };
+        self.missing_check = None;
+        // Пока проверяли, треки могли убрать из медиатеки — их не помечаем
+        self.missing = missing
+            .into_iter()
+            .filter(|path| self.paths.contains(path))
+            .collect();
+        true
+    }
+
+    /// Ошибка фоновой записи, если была, — для показа пользователю
+    pub fn take_save_error(&self) -> Option<String> {
+        self.writer.as_ref().and_then(BackgroundWriter::take_error)
+    }
+
+    /// Ждёт, пока сохранится всё изменённое: перед выходом
+    pub fn flush(&self) {
+        if let Some(writer) = &self.writer {
+            writer.flush();
+        }
     }
 
     pub fn revision(&self) -> u64 {
@@ -110,17 +172,17 @@ impl Library {
 
     /// Заменяет данные треков на перечитанные из тегов (по пути) и сохраняет библиотеку уже
     /// новой версией. Треки, которых нет в `fresh` (файл пропал), остаются как были
-    pub fn refresh(&mut self, fresh: Vec<Track>) -> Result<(), String> {
+    pub fn refresh(&mut self, fresh: Vec<Track>) {
         let mut fresh: std::collections::HashMap<PathBuf, Track> =
             fresh.into_iter().map(|t| (t.path.clone(), t)).collect();
-        for track in &mut self.tracks {
+        for track in Arc::make_mut(&mut self.tracks) {
             if let Some(updated) = fresh.remove(&track.path) {
                 *track = updated;
             }
         }
         self.version = FORMAT_VERSION;
         self.revision += 1;
-        self.save()
+        self.save();
     }
 
     /// Пути, которые уже есть в библиотеке: при повторном добавлении папки их не читаем заново
@@ -128,7 +190,7 @@ impl Library {
         &self.paths
     }
 
-    /// Файла трека не было на диске при загрузке
+    /// Файла трека не было на диске при загрузке (по фоновой проверке)
     pub fn is_missing(&self, index: usize) -> bool {
         self.tracks
             .get(index)
@@ -136,19 +198,20 @@ impl Library {
     }
 
     /// Добавляет треки в конец, пропуская те, что уже есть, и сохраняет библиотеку
-    pub fn add(&mut self, tracks: Vec<Track>) -> Result<(), String> {
-        let before = self.tracks.len();
-        for track in tracks {
-            if self.paths.insert(track.path.clone()) {
-                self.missing.remove(&track.path);
-                self.tracks.push(track);
-            }
+    pub fn add(&mut self, tracks: Vec<Track>) {
+        let new: Vec<Track> = tracks
+            .into_iter()
+            .filter(|track| self.paths.insert(track.path.clone()))
+            .collect();
+        for track in &new {
+            self.missing.remove(&track.path);
         }
-        if self.tracks.len() == before {
-            return Ok(());
+        if new.is_empty() {
+            return;
         }
+        Arc::make_mut(&mut self.tracks).extend(new);
         self.revision += 1;
-        self.save()
+        self.save();
     }
 
     /// Треки с номерами `indices` для воспроизведения — без тех, чьих файлов нет на диске:
@@ -183,39 +246,36 @@ impl Library {
     }
 
     /// Удаляет треки файлов `paths` (сами файлы не трогает) и сохраняет библиотеку
-    pub fn remove_paths(&mut self, paths: &HashSet<PathBuf>) -> Result<(), String> {
+    pub fn remove_paths(&mut self, paths: &HashSet<PathBuf>) {
         let indices = self.indices_of(paths).into_iter().collect();
-        self.remove(&indices)
+        self.remove(&indices);
     }
 
     /// Удаляет треки с номерами `indices` (сами файлы не трогает) и сохраняет библиотеку
-    pub fn remove(&mut self, indices: &BTreeSet<usize>) -> Result<(), String> {
+    pub fn remove(&mut self, indices: &BTreeSet<usize>) {
         let mut index = 0;
-        self.tracks.retain(|track| {
+        let (paths, missing) = (&mut self.paths, &mut self.missing);
+        Arc::make_mut(&mut self.tracks).retain(|track| {
             let keep = !indices.contains(&index);
             index += 1;
             if !keep {
-                self.paths.remove(&track.path);
-                self.missing.remove(&track.path);
+                paths.remove(&track.path);
+                missing.remove(&track.path);
             }
             keep
         });
         self.revision += 1;
-        self.save()
+        self.save();
     }
 
-    fn save(&self) -> Result<(), String> {
-        let Some(file) = &self.file else {
-            return Ok(());
-        };
-        write_atomically(
-            file,
-            &Stored {
+    /// Отправляет библиотеку на запись в фоне. Ошибка придёт позже — `take_save_error`
+    fn save(&self) {
+        if let Some(writer) = &self.writer {
+            writer.write(Snapshot {
                 version: self.version,
-                tracks: self.tracks.clone(),
-            },
-        )
-        .map_err(|e| format!("Could not save the library: {e}"))
+                tracks: Arc::clone(&self.tracks),
+            });
+        }
     }
 }
 
@@ -255,18 +315,25 @@ mod tests {
 
         let (mut library, error) = Library::load(Some(dir.clone()));
         assert!(error.is_none());
-        library.add(vec![track(&a), track(&b)]).unwrap();
+        library.add(vec![track(&a), track(&b)]);
         // Повторное добавление того же файла пропускается
-        library.add(vec![track(&b), track(&c)]).unwrap();
+        library.add(vec![track(&b), track(&c)]);
         assert_eq!(titles(&library), ["a", "b", "c"]);
 
-        library.remove(&BTreeSet::from([0])).unwrap();
+        library.remove(&BTreeSet::from([0]));
+        library.flush();
         fs::remove_file(&c).unwrap();
 
-        // После перезапуска — то же содержимое, а пропавший файл помечен
-        let (library, error) = Library::load(Some(dir.clone()));
+        // После перезапуска — то же содержимое, а пропавший файл помечен — когда закончится
+        // фоновая проверка
+        let (mut library, error) = Library::load(Some(dir.clone()));
         assert!(error.is_none());
         assert_eq!(titles(&library), ["b", "c"]);
+        assert!(!library.is_missing(1));
+        library.check_missing_in_background(|| {});
+        while !library.poll_missing() {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
         assert!(!library.is_missing(0));
         assert!(library.is_missing(1));
         assert!(library.paths().contains(&b));
@@ -295,13 +362,15 @@ mod tests {
         assert_eq!(library.outdated_paths(), Some(vec![path.clone()]));
 
         // Добавление до обновления не должно пометить библиотеку обновлённой
-        library.add(vec![track(&dir.join("b.mp3"))]).unwrap();
+        library.add(vec![track(&dir.join("b.mp3"))]);
+        library.flush();
         let (mut library, _) = Library::load(Some(dir.clone()));
         assert!(library.outdated_paths().is_some());
 
         let mut fresh = track(&path);
         fresh.year = Some(1999);
-        library.refresh(vec![fresh]).unwrap();
+        library.refresh(vec![fresh]);
+        library.flush();
         let (library, _) = Library::load(Some(dir.clone()));
         assert_eq!(library.outdated_paths(), None);
         assert_eq!(library.tracks()[0].year, Some(1999));

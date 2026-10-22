@@ -161,16 +161,14 @@ impl PlayerApp {
         // Обновление библиотеки: файлы, которые не удалось прочитать, просто остаются
         // как были (пропавшие и так помечены) — ошибки не показываем
         if destination == Destination::LibraryRefresh {
-            let result = self.core.library.refresh(finished.tracks);
-            self.report_error(result);
+            self.core.library.refresh(finished.tracks);
             return;
         }
 
         if !finished.tracks.is_empty() {
             match destination {
                 Destination::Library => {
-                    let result = self.core.library.add(finished.tracks);
-                    self.report_error(result);
+                    self.core.library.add(finished.tracks);
                 }
                 Destination::Queue => {
                     let result = self.core.controller.add_tracks(finished.tracks);

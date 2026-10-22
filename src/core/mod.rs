@@ -63,7 +63,11 @@ impl Core {
         wake: impl Fn() + Send + Sync + 'static,
     ) -> (Self, Option<String>) {
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(wake);
-        let (library, mut error) = Library::load(dir.clone());
+        let (mut library, mut error) = Library::load(dir.clone());
+        library.check_missing_in_background({
+            let wake = Arc::clone(&wake);
+            move || wake()
+        });
         let (settings_store, settings, settings_error) = SettingsStore::load(dir.clone());
         let (playlists, playlists_error) = Playlists::load(dir.clone());
         for e in [settings_error, playlists_error].into_iter().flatten() {
@@ -94,6 +98,18 @@ impl Core {
             settings_store,
         };
         (state, error)
+    }
+
+    /// Забирает результаты фоновой работы медиатеки: какие файлы пропали с диска. Вызывать
+    /// каждый кадр. Возвращает ошибку фоновой записи, если была, — для показа пользователю
+    pub fn poll_background(&mut self) -> Option<String> {
+        self.library.poll_missing();
+        self.library.take_save_error()
+    }
+
+    /// Ждёт фоновой записи медиатеки — перед выходом, чтобы последние изменения не потерялись
+    pub fn flush(&self) {
+        self.library.flush();
     }
 
     /// Пересчитывает исполнителей и альбомы, если медиатека изменилась
@@ -206,29 +222,25 @@ impl Core {
 
     /// Треки плейлиста `id` с номерами `indices` — в медиатеку. Те, что уже в ней, не
     /// задваиваются
-    pub fn add_playlist_tracks_to_library(
-        &mut self,
-        id: PlaylistId,
-        indices: &[usize],
-    ) -> Result<(), String> {
+    pub fn add_playlist_tracks_to_library(&mut self, id: PlaylistId, indices: &[usize]) {
         let Some(playlist) = self.playlists.get(id) else {
-            return Ok(());
+            return;
         };
         let tracks = indices
             .iter()
             .filter_map(|&index| playlist.tracks.get(index).cloned())
             .collect();
-        self.library.add(tracks)
+        self.library.add(tracks);
     }
 
     /// Треки очереди с номерами `indices` — в медиатеку. Те, что уже в ней, не задваиваются
-    pub fn add_queue_tracks_to_library(&mut self, indices: &[usize]) -> Result<(), String> {
+    pub fn add_queue_tracks_to_library(&mut self, indices: &[usize]) {
         let queue = &self.controller.player().track_list.tracks;
         let tracks = indices
             .iter()
             .filter_map(|&index| queue.get(index).cloned())
             .collect();
-        self.library.add(tracks)
+        self.library.add(tracks);
     }
 
     /// Сохраняет очередь как новый плейлист `name` и связывает её с ним: следующее
@@ -309,6 +321,13 @@ mod tests {
         (core, dir)
     }
 
+    /// Конец теста: дожидается фоновой записи медиатеки (`Drop`) и убирает папку данных.
+    /// Папки может и не быть — тест ничего не сохранил
+    fn finish(core: Core, dir: PathBuf) {
+        drop(core);
+        let _ = fs::remove_dir_all(dir);
+    }
+
     fn track(name: &str) -> Track {
         Track {
             path: PathBuf::from(format!("/music/{name}.mp3")),
@@ -336,22 +355,20 @@ mod tests {
     #[test]
     fn play_library_tracks_replaces_playlist() {
         let (mut core, dir) = new_core();
-        core.library
-            .add(vec![track("a"), track("b"), track("c")])
-            .unwrap();
+        core.library.add(vec![track("a"), track("b"), track("c")]);
         core.add_library_tracks_to_queue(&[0]).unwrap();
 
         // Файлов нет — сыграть не выйдет, но плейлист уже заменён и трек выбран
         let _ = core.play_library_tracks(&[2, 1]);
         assert_eq!(playlist_titles(&core), ["c", "b"]);
         assert_eq!(current_title(&core).as_deref(), Some("c"));
-        fs::remove_dir_all(dir).unwrap();
+        finish(core, dir);
     }
 
     #[test]
     fn adding_to_empty_playlist_selects_first_track() {
         let (mut core, dir) = new_core();
-        core.library.add(vec![track("a"), track("b")]).unwrap();
+        core.library.add(vec![track("a"), track("b")]);
         core.add_library_tracks_to_queue(&[1, 0]).unwrap();
         assert_eq!(playlist_titles(&core), ["b", "a"]);
         assert_eq!(current_title(&core).as_deref(), Some("b"));
@@ -360,39 +377,39 @@ mod tests {
         core.add_library_tracks_to_queue(&[0]).unwrap();
         assert_eq!(playlist_titles(&core), ["b", "a", "a"]);
         assert_eq!(current_title(&core).as_deref(), Some("b"));
-        fs::remove_dir_all(dir).unwrap();
+        finish(core, dir);
     }
 
     #[test]
     fn play_from_library_does_not_duplicate() {
         let (mut core, dir) = new_core();
-        core.library.add(vec![track("a"), track("b")]).unwrap();
+        core.library.add(vec![track("a"), track("b")]);
         let _ = core.play_from_library(1);
         let _ = core.play_from_library(0);
         let _ = core.play_from_library(1);
         assert_eq!(playlist_titles(&core), ["b", "a"]);
         assert_eq!(current_title(&core).as_deref(), Some("b"));
-        fs::remove_dir_all(dir).unwrap();
+        finish(core, dir);
     }
 
     #[test]
     fn removing_from_library_keeps_playlist() {
         let (mut core, dir) = new_core();
-        core.library.add(vec![track("a"), track("b")]).unwrap();
+        core.library.add(vec![track("a"), track("b")]);
         core.add_library_tracks_to_queue(&[0, 1]).unwrap();
 
         let paths = core.library.paths_of(&[0]);
-        core.library.remove_paths(&paths).unwrap();
+        core.library.remove_paths(&paths);
         let titles: Vec<_> = core.library.tracks().iter().map(|t| &t.title).collect();
         assert_eq!(titles, ["b"]);
         assert_eq!(playlist_titles(&core), ["a", "b"]);
-        fs::remove_dir_all(dir).unwrap();
+        finish(core, dir);
     }
 
     #[test]
     fn playlist_and_settings_survive_restart() {
         let (mut core, dir) = new_core();
-        core.library.add(vec![track("a"), track("b")]).unwrap();
+        core.library.add(vec![track("a"), track("b")]);
         core.add_library_tracks_to_queue(&[0, 1]).unwrap();
         core.controller.set_volume_level(0.3);
         core.save_queue_if_changed().unwrap();
@@ -403,13 +420,13 @@ mod tests {
         assert_eq!(current_title(&restored).as_deref(), Some("a"));
         assert_eq!(restored.library.tracks().len(), 2);
         assert_eq!(restored.controller.volume().level, 0.3);
-        fs::remove_dir_all(dir).unwrap();
+        finish(core, dir);
     }
 
     #[test]
     fn queue_saved_as_playlist_plays_again_after_clear() {
         let (mut core, dir) = new_core();
-        core.library.add(vec![track("a"), track("b")]).unwrap();
+        core.library.add(vec![track("a"), track("b")]);
         core.add_library_tracks_to_queue(&[1, 0]).unwrap();
         let id = core.save_queue_as_playlist("Mix").unwrap();
 
@@ -428,15 +445,13 @@ mod tests {
         assert_eq!(saved.name, "Mix");
         let titles: Vec<_> = saved.tracks.iter().map(|t| t.title.as_str()).collect();
         assert_eq!(titles, ["b", "a", "a"]);
-        fs::remove_dir_all(dir).unwrap();
+        finish(core, dir);
     }
 
     #[test]
     fn saving_linked_queue_updates_its_playlist() {
         let (mut core, dir) = new_core();
-        core.library
-            .add(vec![track("a"), track("b"), track("c")])
-            .unwrap();
+        core.library.add(vec![track("a"), track("b"), track("c")]);
         core.add_library_tracks_to_queue(&[0]).unwrap();
         let id = core.save_queue_as_playlist("Mix").unwrap();
         assert_eq!(core.queue_playlist(), Some(id));
@@ -471,20 +486,20 @@ mod tests {
         assert_eq!(restored.queue_playlist(), Some(id));
         restored.controller.clear().unwrap();
         assert_eq!(restored.queue_playlist(), None);
-        fs::remove_dir_all(dir).unwrap();
+        finish(core, dir);
     }
 
     #[test]
     fn playlist_tracks_outside_library_can_be_added_to_it() {
         let (mut core, dir) = new_core();
-        core.library.add(vec![track("a")]).unwrap();
+        core.library.add(vec![track("a")]);
         // «b» добавлен в очередь мимо медиатеки и сохранён в плейлист вместе с «a»
         core.add_library_tracks_to_queue(&[0]).unwrap();
         core.controller.add_tracks(vec![track("b")]).unwrap();
         let id = core.save_queue_as_playlist("Mix").unwrap();
         assert_eq!(core.library.tracks().len(), 1);
 
-        core.add_playlist_tracks_to_library(id, &[0, 1]).unwrap();
+        core.add_playlist_tracks_to_library(id, &[0, 1]);
         let titles: Vec<_> = core
             .library
             .tracks()
@@ -492,6 +507,6 @@ mod tests {
             .map(|t| t.title.as_str())
             .collect();
         assert_eq!(titles, ["a", "b"]);
-        fs::remove_dir_all(dir).unwrap();
+        finish(core, dir);
     }
 }
