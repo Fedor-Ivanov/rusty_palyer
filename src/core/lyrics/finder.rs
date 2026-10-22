@@ -11,7 +11,7 @@ use std::{
         Arc,
         mpsc::{self, Receiver, Sender},
     },
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant},
 };
 
 use super::{
@@ -19,7 +19,10 @@ use super::{
     lrclib::{self, Remote, TrackSignature},
     parse_lyrics,
 };
-use crate::core::{library::Track, storage::write_atomically};
+use crate::core::{
+    library::Track,
+    storage::{now_secs, stable_hash, write_atomically},
+};
 
 const DIR_NAME: &str = "lyrics";
 const FORMAT_VERSION: u32 = 1;
@@ -46,6 +49,8 @@ pub struct TrackLyrics {
     pub instrumental: bool,
     /// LRCLIB недавно не ответил (сеть, сервер занят) — спросим позже
     pub unavailable: bool,
+    /// Спросить LRCLIB нельзя: поиск в интернете выключен в настройках
+    pub offline: bool,
 }
 
 /// Ответ LRCLIB в кеше
@@ -70,6 +75,9 @@ pub struct LyricsFinder {
     results: Receiver<(TrackSignature, Result<Remote, String>)>,
     /// Будит приложение, когда пришёл ответ: оно перечитает текст
     wake: Arc<dyn Fn() + Send + Sync>,
+    /// Можно ли спрашивать LRCLIB — поиск в интернете в настройках. Без него — свои тексты
+    /// и уже скачанные
+    online: bool,
 }
 
 impl LyricsFinder {
@@ -83,7 +91,12 @@ impl LyricsFinder {
             sender,
             results,
             wake,
+            online: false,
         }
+    }
+
+    pub fn set_online(&mut self, online: bool) {
+        self.online = online;
     }
 
     /// Текст песни трека. Свой синхронизированный — сразу он. Иначе спрашиваем LRCLIB
@@ -118,6 +131,11 @@ impl LyricsFinder {
             }
             Some(Remote::NotFound) => TrackLyrics {
                 lyrics: local,
+                ..TrackLyrics::default()
+            },
+            None if !self.online => TrackLyrics {
+                lyrics: local,
+                offline: true,
                 ..TrackLyrics::default()
             },
             None => {
@@ -226,8 +244,7 @@ fn signature(track: &Track) -> Option<TrackSignature> {
     })
 }
 
-/// Имя файла кеша — хеш сигнатуры без учёта регистра. FNV-1a, а не `DefaultHasher`:
-/// тот может считать иначе в другой версии Rust, и кеш потерялся бы
+/// Имя файла кеша — хеш сигнатуры без учёта регистра
 fn file_name(signature: &TrackSignature) -> String {
     let key = format!(
         "{}\u{1f}{}\u{1f}{}\u{1f}{}",
@@ -236,16 +253,7 @@ fn file_name(signature: &TrackSignature) -> String {
         signature.album.to_lowercase(),
         signature.duration_secs
     );
-    let hash = key.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
-        (hash ^ byte as u64).wrapping_mul(0x0000_0100_0000_01b3)
-    });
-    format!("{hash:016x}.json")
-}
-
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs())
+    format!("{:016x}.json", stable_hash(&key))
 }
 
 #[cfg(test)]

@@ -144,6 +144,8 @@ pub(crate) enum Action {
     SetLanguage(Language),
     /// Оттенок и прозрачность стекла окна
     SetGlass(Glass),
+    /// Включить или выключить поиск в интернете: фото исполнителей, тексты песен
+    SetOnlineLookups(bool),
 
     /// Показать или спрятать текст песни на странице текущего трека
     ToggleLyrics,
@@ -362,6 +364,11 @@ impl PlayerApp {
             }
 
             Action::SetGlass(glass) => self.core.settings.update_glass(glass),
+            Action::SetOnlineLookups(online) => {
+                self.core.set_online_lookups(online);
+                // Текст песни мог не найтись из-за выключенного поиска — найдём заново
+                self.current_lyrics = None;
+            }
 
             Action::ToggleLyrics => self.lyrics_open = !self.lyrics_open,
 

@@ -89,6 +89,13 @@ impl PlayerApp {
                 ]
             },
         );
+        // Соседние с экраном ряды — заранее: при прокрутке обложки уже будут готовы
+        for index in self.playlists_grid.nearby() {
+            covers.prefetch(
+                &cover_candidates(&all[shown[index]].tracks),
+                CoverSize::Thumbnail,
+            );
+        }
         if response.interacted {
             self.focus = ListFocus::Grid;
         }

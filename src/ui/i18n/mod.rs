@@ -121,6 +121,8 @@ pub struct Texts {
     pub searching_lyrics: &'static str,
     /// LRCLIB не ответил — текста пока нет
     pub lyrics_unavailable: &'static str,
+    /// Текста нет, а поиск в интернете выключен
+    pub lyrics_offline: &'static str,
     /// Трек без слов — так о нём говорит LRCLIB
     pub instrumental: &'static str,
     pub show_album: &'static str,
@@ -181,6 +183,9 @@ pub struct Texts {
     // ---- настройки
     pub language: &'static str,
     pub version: &'static str,
+    pub online_search: &'static str,
+    /// Под переключателем: что и куда отправляется
+    pub online_search_note: &'static str,
     pub glass_tint: &'static str,
     pub transparency: &'static str,
     pub tint_graphite: &'static str,

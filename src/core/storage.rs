@@ -21,6 +21,21 @@ pub fn write_atomically(file: &Path, value: &impl Serialize) -> Result<(), Strin
     fs::rename(&temp, file).map_err(|e| e.to_string())
 }
 
+/// Хеш строки для имён файлов кеша (тексты песен, картинки исполнителей) — FNV-1a.
+/// Не `DefaultHasher`: тот может считать иначе в другой версии Rust, и кеш потерялся бы
+pub fn stable_hash(text: &str) -> u64 {
+    text.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ byte as u64).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+/// Сейчас — в секундах Unix: когда спрашивали сервис, для срока жизни ответа в кеше
+pub fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
 /// Запись файла в фоновом потоке — для больших файлов (медиатека), чтобы интерфейс
 /// не ждал записи. Пишет по порядку; если изменения идут чаще, чем успевает запись,
 /// промежуточные состояния пропускаются — пишется последнее. При уничтожении дожидается

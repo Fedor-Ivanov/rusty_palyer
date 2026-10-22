@@ -120,6 +120,10 @@ impl PlayerApp {
                 ]
             },
         );
+        // Соседние с экраном ряды — заранее: при прокрутке обложки уже будут готовы
+        for index in grid.nearby() {
+            covers.prefetch(&albums[index].cover_candidates, CoverSize::Thumbnail);
+        }
         if response.interacted {
             self.focus = ListFocus::Grid;
         }

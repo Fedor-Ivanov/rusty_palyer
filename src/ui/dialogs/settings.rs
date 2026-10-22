@@ -9,7 +9,7 @@ use crate::{
         app::PlayerApp,
         components::{self, ButtonStyle},
         i18n::{self, t},
-        style::theme::{TEXT, TEXT_MUTED, tint_swatch},
+        style::theme::{TEXT, TEXT_FAINT, TEXT_MUTED, tint_swatch},
     },
 };
 
@@ -82,6 +82,25 @@ impl PlayerApp {
                 }
             });
             ui.add_space(SETTING_ROW_GAP);
+
+            // Поиск в интернете: выключен, пока пользователь не включит — ниже сказано,
+            // что и куда отправляется
+            let online = self.core.settings.online_lookups();
+            setting_row(ui, t().online_search, |ui| {
+                if components::switch(ui, online) {
+                    self.dispatch(Action::SetOnlineLookups(!online));
+                }
+            });
+            ui.add(
+                Label::new(
+                    RichText::new(t().online_search_note)
+                        .size(12.0)
+                        .color(TEXT_FAINT),
+                )
+                .wrap()
+                .selectable(false),
+            );
+            ui.add_space(SETTING_ROW_GAP + 6.0);
 
             // Версия приложения — из Cargo.toml на момент сборки
             setting_row(ui, t().version, |ui| {

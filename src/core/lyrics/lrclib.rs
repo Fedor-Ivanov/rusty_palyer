@@ -3,17 +3,11 @@
 //! расхождение длительности в пару секунд).
 
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
+
+use crate::core::net;
 
 const GET_URL: &str = "https://lrclib.net/api/get";
 const SEARCH_URL: &str = "https://lrclib.net/api/search";
-/// LRCLIB просит, чтобы приложение представлялось: название, версия и ссылка
-const USER_AGENT: &str = concat!(
-    "LMP ",
-    env!("CARGO_PKG_VERSION"),
-    " (https://github.com/Fedor-Ivanov/rusty_palyer)"
-);
-const TIMEOUT: Duration = Duration::from_secs(15);
 
 /// По чему ищется трек
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -62,13 +56,7 @@ const DURATION_TOLERANCE_SECS: f64 = 2.0;
 /// («… (Limited Edition)»). Ошибка — сеть, сервер занят (503) и прочее временное:
 /// такой ответ не запоминается, его можно спросить снова
 pub fn fetch(signature: &TrackSignature) -> Result<Remote, String> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
-        .timeout_global(Some(TIMEOUT))
-        .user_agent(USER_AGENT)
-        // 404 — не ошибка, а ответ «не найден»
-        .http_status_as_error(false)
-        .build()
-        .into();
+    let agent = net::agent();
 
     let response = agent
         .get(GET_URL)

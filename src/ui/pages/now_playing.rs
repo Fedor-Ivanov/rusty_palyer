@@ -276,6 +276,8 @@ impl PlayerApp {
                 t().instrumental
             } else if found.unavailable {
                 t().lyrics_unavailable
+            } else if found.offline {
+                t().lyrics_offline
             } else {
                 t().no_lyrics
             };

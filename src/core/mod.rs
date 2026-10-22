@@ -2,8 +2,10 @@
 //! на диск — и `Core`, который владеет ими всеми. Ничего не знает об egui: интерфейс
 //! (`crate::ui`) только читает отсюда данные и вызывает методы. Проверяется тестами без окна.
 
+pub mod artist_images;
 pub mod library;
 pub mod lyrics;
+pub mod net;
 pub mod playback;
 pub mod playlists;
 pub mod settings;
@@ -12,6 +14,7 @@ pub mod storage;
 use std::{path::PathBuf, sync::Arc};
 
 use self::{
+    artist_images::{ArtistImage, ArtistImages, ArtistJob},
     library::{
         Library, Track,
         groups::{self, AlbumGroup, ArtistGroup},
@@ -39,6 +42,8 @@ pub struct Core {
     pub groups: LibraryGroups,
     /// Тексты песен: свои и из LRCLIB, с кешем ответов
     pub lyrics: LyricsFinder,
+    /// Картинки исполнителей: свои и из Deezer, ищутся в фоне
+    pub artist_images: ArtistImages,
     queue_store: QueueStore,
     /// Ревизия плейлиста, которая уже сохранена на диск
     saved_queue_revision: u64,
@@ -73,7 +78,10 @@ impl Core {
         for e in [settings_error, playlists_error].into_iter().flatten() {
             error.get_or_insert(e);
         }
-        let lyrics = LyricsFinder::new(dir.clone(), Arc::clone(&wake));
+        let mut lyrics = LyricsFinder::new(dir.clone(), Arc::clone(&wake));
+        let mut artist_images = ArtistImages::new(dir.clone(), Arc::clone(&wake));
+        lyrics.set_online(settings.online_lookups());
+        artist_images.set_online(settings.online_lookups());
         let queue_store = QueueStore::new(dir);
         let saved_queue = queue_store.load().unwrap_or_else(|e| {
             error.get_or_insert(e);
@@ -94,16 +102,19 @@ impl Core {
             settings,
             groups: LibraryGroups::default(),
             lyrics,
+            artist_images,
             queue_store,
             settings_store,
         };
         (state, error)
     }
 
-    /// Забирает результаты фоновой работы медиатеки: какие файлы пропали с диска. Вызывать
+    /// Забирает результаты фоновой работы: какие файлы медиатеки пропали с диска, готовые
+    /// картинки исполнителей. Вызывать
     /// каждый кадр. Возвращает ошибку фоновой записи, если была, — для показа пользователю
     pub fn poll_background(&mut self) -> Option<String> {
         self.library.poll_missing();
+        self.artist_images.poll();
         self.library.take_save_error()
     }
 
@@ -122,7 +133,49 @@ impl Core {
                 artists,
                 albums,
             };
+            // Исполнители изменились — картинки новых ищутся в фоне
+            self.prefetch_artist_images();
         }
+    }
+
+    /// Включает или выключает поиск в интернете: фото исполнителей и тексты песен.
+    /// После включения фоновый поиск продолжается с теми, кого не искали
+    pub fn set_online_lookups(&mut self, online: bool) {
+        self.settings.update_online_lookups(online);
+        self.lyrics.set_online(online);
+        self.artist_images.set_online(online);
+        if online && self.groups.revision.is_some() {
+            self.prefetch_artist_images();
+        }
+    }
+
+    /// Ставит всех исполнителей медиатеки в фоновую очередь картинок — известных
+    /// очередь пропустит
+    fn prefetch_artist_images(&mut self) {
+        let jobs: Vec<ArtistJob> = self
+            .groups
+            .artists
+            .iter()
+            .map(|artist| ArtistJob {
+                name: artist.name.clone(),
+                music_dirs: music_dirs(&self.library, &artist.tracks),
+            })
+            .collect();
+        self.artist_images.prefetch(jobs);
+    }
+
+    /// Картинка исполнителя `name` для показа: готова, ищется или её нет. Не готова —
+    /// исполнитель встаёт в начало фоновой очереди
+    pub fn artist_image(&mut self, name: &str) -> ArtistImage {
+        let (images, library, groups) = (&mut self.artist_images, &self.library, &self.groups);
+        images.image(name, || {
+            groups
+                .artists
+                .iter()
+                .find(|artist| artist.name == name)
+                .map(|artist| music_dirs(library, &artist.tracks))
+                .unwrap_or_default()
+        })
     }
 
     /// Заменяет плейлист треками медиатеки `indices` и играет с первого
@@ -305,6 +358,28 @@ impl Core {
         self.settings.update_volume(self.controller.volume());
         self.settings_store.save_if_changed(&self.settings)
     }
+}
+
+/// Папки, где искать свою картинку исполнителя: папки его треков (альбомов) и папки
+/// над ними (исполнителя). Хватает первых треков — остальные обычно в тех же папках
+fn music_dirs(library: &Library, tracks: &[usize]) -> Vec<PathBuf> {
+    const TRACKS_TO_LOOK_AT: usize = 20;
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    for index in tracks.iter().take(TRACKS_TO_LOOK_AT) {
+        let Some(album_dir) = library
+            .tracks()
+            .get(*index)
+            .and_then(|track| track.path.parent())
+        else {
+            continue;
+        };
+        for dir in [Some(album_dir), album_dir.parent()].into_iter().flatten() {
+            if !dirs.iter().any(|known| known == dir) {
+                dirs.push(dir.to_path_buf());
+            }
+        }
+    }
+    dirs
 }
 
 #[cfg(test)]

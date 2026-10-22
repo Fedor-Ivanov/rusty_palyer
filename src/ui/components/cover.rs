@@ -20,7 +20,14 @@ use crate::ui::{
 /// если в тегах обложки нет — заглушка с пластинкой
 pub fn paint_cover(ui: &Ui, rect: Rect, cover: Cover<'_>, corner_radius: u8) {
     match cover {
-        Cover::Ready(texture) => paint_square_image(ui, texture, rect, corner_radius),
+        Cover::Ready(texture, appear) => {
+            // Только что готова — проявляется поверх подложки «читается»
+            if appear < 1.0 {
+                ui.painter()
+                    .rect_filled(rect, CornerRadius::same(corner_radius), HIGHLIGHT);
+            }
+            paint_square_image(ui, texture, rect, corner_radius, appear);
+        }
         Cover::Missing => paint_placeholder(ui.painter(), rect, corner_radius),
         Cover::Loading => {
             ui.painter()
@@ -29,10 +36,18 @@ pub fn paint_cover(ui: &Ui, rect: Rect, cover: Cover<'_>, corner_radius: u8) {
     }
 }
 
-fn paint_square_image(ui: &Ui, texture: &TextureHandle, rect: Rect, corner_radius: u8) {
+/// Картинка, обрезанная до квадрата, с непрозрачностью `opacity`
+fn paint_square_image(
+    ui: &Ui,
+    texture: &TextureHandle,
+    rect: Rect,
+    corner_radius: u8,
+    opacity: f32,
+) {
     egui::Image::new((texture.id(), rect.size()))
         .uv(cover_uv(texture, rect))
         .corner_radius(corner_radius)
+        .tint(Color32::WHITE.gamma_multiply(opacity))
         .paint_at(ui, rect);
 }
 
@@ -80,7 +95,8 @@ impl CoverFade {
     pub fn update(&mut self, ui: &Ui, cover: Cover<'_>) -> f32 {
         let now = ui.input(|input| input.time);
         let next = match cover {
-            Cover::Ready(texture) => Some(Shown::Image(texture.clone())),
+            // Смену трека проявляет сама: своё проявление кэша ей не нужно
+            Cover::Ready(texture, _) => Some(Shown::Image(texture.clone())),
             Cover::Missing => Some(Shown::Missing),
             Cover::Loading => None,
         };

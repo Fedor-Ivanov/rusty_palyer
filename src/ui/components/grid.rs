@@ -8,7 +8,7 @@ use eframe::egui::{
     self, Align, Color32, CursorIcon, FontId, Key, Rect, Response, RichText, Sense, Stroke,
     StrokeKind, Ui, pos2, vec2,
 };
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, ops::Range};
 
 use super::selection::{Marquee, Selection};
 use crate::ui::style::theme::{
@@ -19,6 +19,8 @@ use crate::ui::style::theme::{
 /// Плитка не уже этого: колонок столько, сколько таких плиток помещается
 const TILE_MIN_WIDTH: f32 = 140.0;
 const TILE_GAP: f32 = 18.0;
+/// Сколько рядов выше и ниже видимых считаются соседними — их картинки готовятся заранее
+const NEARBY_ROWS: usize = 2;
 /// Отступ сверху: рамка выделения выходит за плитку и у первой строки иначе обрезалась бы
 /// краем прокрутки
 const TOP_MARGIN: f32 = 8.0;
@@ -71,6 +73,8 @@ pub struct TileGridView {
     marquee: Option<Marquee>,
     /// К какому содержимому относится выделение (см. `set_scope`)
     scope: String,
+    /// Плитки видимых рядов и соседних с ними — по последнему `show` (см. `nearby`)
+    nearby: Range<usize>,
 }
 
 impl TileGridView {
@@ -80,6 +84,7 @@ impl TileGridView {
             selection: Selection::default(),
             marquee: None,
             scope: String::new(),
+            nearby: 0..0,
         }
     }
 
@@ -96,6 +101,12 @@ impl TileGridView {
 
     pub fn selection(&self) -> &BTreeSet<usize> {
         self.selection.indices()
+    }
+
+    /// Плитки на экране и в `NEARBY_ROWS` рядах выше и ниже — по последнему `show`. Их
+    /// картинки стоит заказать заранее: при прокрутке они будут готовы
+    pub fn nearby(&self) -> Range<usize> {
+        self.nearby.clone()
     }
 
     /// Рисует сетку из `count` плиток с `line_count` строками текста в каждой. `text_align` —
@@ -147,6 +158,7 @@ impl TileGridView {
         let row_height = tile_width + TEXT_TOP_GAP + text_height(ui, line_count);
         let rows = count.div_ceil(columns);
         let modifiers = ui.input(|i| i.modifiers);
+        let mut nearby = 0..0;
 
         ui.spacing_mut().item_spacing.y = TILE_GAP;
         egui::ScrollArea::vertical()
@@ -158,6 +170,9 @@ impl TileGridView {
                 bottom: SIDE_MARGIN as i8,
             })
             .show_rows(ui, row_height, rows, |ui, visible_rows| {
+                let first_row = visible_rows.start.saturating_sub(NEARBY_ROWS);
+                let end_row = (visible_rows.end + NEARBY_ROWS).min(rows);
+                nearby = first_row * columns..(end_row * columns).min(count);
                 // Верх и левый край всего содержимого сетки на экране: show_rows отдаёт
                 // только видимый кусок, начиная со строки visible_rows.start. Плитки под рамкой
                 // считаются по размерам сетки, а не по нарисованным виджетам — плиток
@@ -337,6 +352,7 @@ impl TileGridView {
                 }
             });
 
+        self.nearby = nearby;
         response
     }
 }

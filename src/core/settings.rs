@@ -83,6 +83,10 @@ pub struct Settings {
     language: Language,
     volume: Volume,
     glass: Glass,
+    /// Искать в интернете то, чего нет в файлах: фото исполнителей (Deezer) и тексты
+    /// песен (LRCLIB). Выключено, пока пользователь не включит: иначе приложение без спроса
+    /// отправляло бы сервисам имена исполнителей и названия треков
+    online_lookups: bool,
 }
 
 impl Settings {
@@ -104,6 +108,14 @@ impl Settings {
 
     pub fn glass(&self) -> Glass {
         self.glass
+    }
+
+    pub fn online_lookups(&self) -> bool {
+        self.online_lookups
+    }
+
+    pub fn update_online_lookups(&mut self, online: bool) {
+        self.online_lookups = online;
     }
 
     pub fn update_glass(&mut self, glass: Glass) {
@@ -198,6 +210,8 @@ mod tests {
         assert_eq!(loaded.language(), Language::Russian);
         assert_eq!(loaded.volume(), Volume::default());
         assert_eq!(loaded.glass(), Glass::default());
+        // Поиск в интернете — только если пользователь включил
+        assert!(!loaded.online_lookups());
 
         fs::remove_dir_all(dir).unwrap();
     }

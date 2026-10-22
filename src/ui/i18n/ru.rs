@@ -50,6 +50,7 @@ pub static TEXTS: Texts = Texts {
     searching_lyrics: "Ищем текст песни…",
 
     lyrics_unavailable: "Не удалось связаться с LRCLIB, попробуем позже",
+    lyrics_offline: "Включите поиск в интернете в настройках, чтобы найти текст",
 
     instrumental: "Инструментал",
     show_album: "Показать альбом",
@@ -98,6 +99,8 @@ pub static TEXTS: Texts = Texts {
 
     language: "Язык",
     version: "Версия",
+    online_search: "Поиск в интернете",
+    online_search_note: "Фото исполнителей из Deezer и тексты песен из LRCLIB. Этим сервисам отправляются имена исполнителей и названия треков.",
     glass_tint: "Цвет",
     transparency: "Прозрачность",
     tint_graphite: "Графит",

@@ -58,6 +58,7 @@ pub static TEXTS: Texts = Texts {
     searching_lyrics: "Searching for lyrics…",
 
     lyrics_unavailable: "Couldn't reach LRCLIB, will try again later",
+    lyrics_offline: "Turn on online search in Settings to find lyrics",
 
     instrumental: "Instrumental",
     show_album: "Show album",
@@ -107,6 +108,8 @@ pub static TEXTS: Texts = Texts {
 
     language: "Language",
     version: "Version",
+    online_search: "Online search",
+    online_search_note: "Artist photos from Deezer and lyrics from LRCLIB. Artist names and track titles are sent to these services.",
     glass_tint: "Color",
     transparency: "Transparency",
     tint_graphite: "Graphite",
