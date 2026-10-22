@@ -38,7 +38,7 @@ souvlaki = "0.8.3"
 # Запросы текстов песен в LRCLIB (см. src/core/lyrics/lrclib.rs)
 ureq = { version = "3.5.0", features = ["json"] }
 
-# Системное размытие под прозрачным окном (см. src/window_glass.rs)
+# Системное размытие под прозрачным окном (см. src/ui/style/window_glass.rs)
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSGeometry", "NSString", "NSThread"] }
@@ -53,10 +53,14 @@ objc2-app-kit = { version = "0.3", features = [
 ] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
+# На Windows окно рисуется через OpenGL (glow), а не wgpu — см. window_glass.rs
+eframe = { version = "0.37", features = ["glow"] }
 window-vibrancy = "0.8.1"
-# Положение курсора, пока над окном перетаскивают файлы (см. src/ui/file_drop.rs)
+# Стекло окна (src/ui/style/window_glass.rs) и положение курсора, пока над окном
+# перетаскивают файлы (src/ui/file_drop.rs)
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_UI_WindowsAndMessaging",
 ] }

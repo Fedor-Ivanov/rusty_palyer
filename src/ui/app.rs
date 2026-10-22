@@ -190,8 +190,15 @@ impl PlayerApp {
 }
 
 impl eframe::App for PlayerApp {
-    /// Выход: медиатека пишется в фоне — дожидаемся, чтобы последние изменения сохранились
+    /// Выход: медиатека пишется в фоне — дожидаемся, чтобы последние изменения сохранились.
+    /// С OpenGL (на Windows, см. `window_glass::renderer`) eframe передаёт сюда его контекст
+    #[cfg(not(target_os = "windows"))]
     fn on_exit(&mut self) {
+        self.core.flush();
+    }
+
+    #[cfg(target_os = "windows")]
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         self.core.flush();
     }
 

@@ -7,13 +7,8 @@ pub fn apply(cc: &eframe::CreationContext<'_>) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     return macos::apply(cc);
 
-    // Windows 11: Mica в тёмном варианте. Система рисует его под всем окном сама,
-    // поэтому готовая функция из window-vibrancy здесь подходит. Mica есть только
-    // в Windows 11 — в Windows 10 обычное системное размытие
     #[cfg(target_os = "windows")]
-    return window_vibrancy::apply_mica(cc, Some(true))
-        .or_else(|_| window_vibrancy::apply_blur(cc, None))
-        .map_err(|e| e.to_string());
+    return windows::apply(cc);
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -22,25 +17,62 @@ pub fn apply(cc: &eframe::CreationContext<'_>) -> Result<(), String> {
     }
 }
 
-/// Настройки отрисовки (wgpu). Окно прозрачное, но рисовать в прозрачное окно умеет
-/// не всякий способ вывода. На Windows по умолчанию wgpu выводит прямо в окно
-/// (`DxgiFromHwnd`) — без прозрачности: стекла под окном не видно, фон сплошной. Прозрачность
-/// умеет только вывод через DirectComposition (`DxgiFromVisual`), а он есть только у DX12 —
-/// поэтому на Windows другие API (Vulkan) не используются. На macOS настройки по умолчанию
-pub fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
-    #[allow(unused_mut)]
-    let mut options = eframe::egui_wgpu::WgpuConfiguration::default();
+/// Чем рисовать окно. На Windows — OpenGL (glow): он рисует в обычную поверхность окна,
+/// а её winit делает прозрачной, и под ней виден системный Acrylic. wgpu на Windows рисует
+/// через DX12: напрямую в окно — без прозрачности, а через DirectComposition — под
+/// поверхностью окна, которая его перекрывает (убрать её можно только флагом при создании
+/// окна, а eframe его не передаёт). На macOS — wgpu, как по умолчанию
+pub fn renderer() -> eframe::Renderer {
     #[cfg(target_os = "windows")]
-    if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_setup {
-        use eframe::wgpu;
-        setup.instance_descriptor.backends = wgpu::Backends::DX12;
-        setup
-            .instance_descriptor
-            .backend_options
-            .dx12
-            .presentation_system = wgpu::Dx12SwapchainKind::DxgiFromVisual;
+    return eframe::Renderer::Glow;
+    #[cfg(not(target_os = "windows"))]
+    eframe::Renderer::default()
+}
+
+/// Windows: стекло — системный материал Acrylic (размывает окна и рабочий стол позади),
+/// в тёмном варианте. Не Mica: Mica не просвечивает — это почти сплошная заливка в тон
+/// обоев, а в светлой теме Windows ещё и светлая
+#[cfg(target_os = "windows")]
+mod windows {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows_sys::Win32::{
+        Foundation::HWND,
+        Graphics::Dwm::{
+            DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE,
+            DwmSetWindowAttribute,
+        },
+    };
+
+    pub fn apply(cc: &eframe::CreationContext<'_>) -> Result<(), String> {
+        let handle = cc.window_handle().map_err(|e| e.to_string())?;
+        let RawWindowHandle::Win32(handle) = handle.as_raw() else {
+            return Err("the window is not a Win32 window".into());
+        };
+        let hwnd = handle.hwnd.get() as HWND;
+        // Тёмный вариант материала и заголовка — независимо от темы Windows
+        let _ = set_attribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, 1u32);
+        // Системный Acrylic есть в Windows 11 22H2 и новее; система рисует его сама,
+        // окно не тормозит при перетаскивании. Нет его (Windows 10) — обычное размытие:
+        // Acrylic Windows 10 заметно тормозит при перетаскивании окна
+        if set_attribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, DWMSBT_TRANSIENTWINDOW).is_ok() {
+            return Ok(());
+        }
+        window_vibrancy::apply_blur(cc, None).map_err(|e| e.to_string())
     }
-    options
+
+    /// Атрибут окна для DWM. Ошибка — система его не знает (старая версия Windows)
+    fn set_attribute<T>(hwnd: HWND, attribute: i32, value: T) -> Result<(), i32> {
+        // SAFETY: окно живо, `value` живёт до конца вызова, размер — его собственный
+        let result = unsafe {
+            DwmSetWindowAttribute(
+                hwnd,
+                attribute as u32,
+                (&raw const value).cast(),
+                size_of::<T>() as u32,
+            )
+        };
+        if result < 0 { Err(result) } else { Ok(()) }
+    }
 }
 
 #[cfg(target_os = "macos")]
