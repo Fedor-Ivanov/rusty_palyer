@@ -4,6 +4,7 @@
 use eframe::egui::{self, Rect, Ui, pos2, vec2};
 use std::{
     collections::HashSet,
+    path::PathBuf,
     time::{Duration, Instant},
 };
 
@@ -105,6 +106,31 @@ impl PlayerApp {
             return;
         };
         self.start_loading(Source::Folder(dir), destination);
+    }
+
+    /// Перетащенные файлы и папки: файлы — одним добавлением (неподдерживаемые, например
+    /// картинки, пропускаются), каждая папка — своим, со всеми аудиофайлами внутри
+    pub(crate) fn add_paths(&mut self, paths: Vec<PathBuf>, destination: Destination) {
+        let (folders, files): (Vec<PathBuf>, Vec<PathBuf>) =
+            paths.into_iter().partition(|path| path.is_dir());
+        let files: Vec<PathBuf> = files
+            .into_iter()
+            .filter(|path| {
+                path.extension()
+                    .and_then(|ext| ext.to_str())
+                    .is_some_and(|ext| {
+                        SUPPORTED_EXTENSIONS
+                            .iter()
+                            .any(|known| ext.eq_ignore_ascii_case(known))
+                    })
+            })
+            .collect();
+        if !files.is_empty() {
+            self.start_loading(Source::Files(files), destination);
+        }
+        for folder in folders {
+            self.start_loading(Source::Folder(folder), destination);
+        }
     }
 
     pub(crate) fn start_loading(&mut self, source: Source, destination: Destination) {

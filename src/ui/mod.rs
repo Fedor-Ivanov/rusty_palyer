@@ -15,6 +15,7 @@ mod app;
 mod components;
 mod covers;
 mod dialogs;
+mod file_drop;
 mod i18n;
 mod loading;
 mod navigation;

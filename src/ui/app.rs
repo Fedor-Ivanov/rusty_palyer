@@ -14,7 +14,7 @@ use super::{
     components::{self, CoverFade, TileGridView, TrackListView},
     covers::CoverCache,
     dialogs::{playlist::NameDialog, remove::LibraryRemoval},
-    i18n,
+    file_drop, i18n,
     loading::{Destination, PendingLoad},
     navigation::Route,
     pages::LibrarySearch,
@@ -98,6 +98,8 @@ pub struct PlayerApp {
     pub(crate) lyrics_line: Option<usize>,
     /// Системные медиа-кнопки и показ текущего трека системе
     pub(crate) system_media: SystemMedia,
+    /// Где курсор, пока над окном перетаскивают файлы (см. `file_drop`)
+    pub(crate) drop_cursor: file_drop::Cursor,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -155,6 +157,7 @@ impl PlayerApp {
             current_lyrics: None,
             lyrics_line: None,
             system_media: SystemMedia::new(cc),
+            drop_cursor: file_drop::Cursor::new(cc),
         };
         // Библиотека сохранена старым форматом — один раз перечитываем её теги в фоне
         if let Some(paths) = outdated {
@@ -398,6 +401,9 @@ impl eframe::App for PlayerApp {
         components::paint_resize_line(ui, sidebar_rect.right(), sidebar_rect.y_range());
         let track_list_rect = track_list.response.rect;
         components::paint_resize_line(ui, track_list_rect.left(), track_list_rect.y_range());
+
+        // Перетаскивание файлов: зоны поверх всего окна, пока файлы над ним
+        self.render_file_drop(ui.ctx(), track_list_rect);
 
         // Всё, что пользователь сделал за кадр, — после отрисовки, до сохранения
         self.apply_actions(ui.ctx());

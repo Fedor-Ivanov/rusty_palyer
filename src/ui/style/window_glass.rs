@@ -8,15 +8,39 @@ pub fn apply(cc: &eframe::CreationContext<'_>) -> Result<(), String> {
     return macos::apply(cc);
 
     // Windows 11: Mica в тёмном варианте. Система рисует его под всем окном сама,
-    // поэтому готовая функция из window-vibrancy здесь подходит
+    // поэтому готовая функция из window-vibrancy здесь подходит. Mica есть только
+    // в Windows 11 — в Windows 10 обычное системное размытие
     #[cfg(target_os = "windows")]
-    return window_vibrancy::apply_mica(cc, Some(true)).map_err(|e| e.to_string());
+    return window_vibrancy::apply_mica(cc, Some(true))
+        .or_else(|_| window_vibrancy::apply_blur(cc, None))
+        .map_err(|e| e.to_string());
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = cc;
         Err("window blur is only supported on macOS and Windows".into())
     }
+}
+
+/// Настройки отрисовки (wgpu). Окно прозрачное, но рисовать в прозрачное окно умеет
+/// не всякий способ вывода. На Windows по умолчанию wgpu выводит прямо в окно
+/// (`DxgiFromHwnd`) — без прозрачности: стекла под окном не видно, фон сплошной. Прозрачность
+/// умеет только вывод через DirectComposition (`DxgiFromVisual`), а он есть только у DX12 —
+/// поэтому на Windows другие API (Vulkan) не используются. На macOS настройки по умолчанию
+pub fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
+    #[allow(unused_mut)]
+    let mut options = eframe::egui_wgpu::WgpuConfiguration::default();
+    #[cfg(target_os = "windows")]
+    if let eframe::egui_wgpu::WgpuSetup::CreateNew(setup) = &mut options.wgpu_setup {
+        use eframe::wgpu;
+        setup.instance_descriptor.backends = wgpu::Backends::DX12;
+        setup
+            .instance_descriptor
+            .backend_options
+            .dx12
+            .presentation_system = wgpu::Dx12SwapchainKind::DxgiFromVisual;
+    }
+    options
 }
 
 #[cfg(target_os = "macos")]

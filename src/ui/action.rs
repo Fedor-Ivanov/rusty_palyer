@@ -131,6 +131,11 @@ pub(crate) enum Action {
     AddFiles(Destination),
     /// Выбрать папку и добавить все аудиофайлы в ней
     AddFolder(Destination),
+    /// Добавить перетащенные файлы и папки (папки — со всеми аудиофайлами внутри)
+    AddPaths {
+        paths: Vec<PathBuf>,
+        destination: Destination,
+    },
     /// Фоновое добавление закончилось: положить прочитанное по назначению
     TracksLoaded {
         finished: Finished,
@@ -352,6 +357,7 @@ impl PlayerApp {
 
             Action::AddFiles(destination) => self.add_files(destination),
             Action::AddFolder(destination) => self.add_folder(destination),
+            Action::AddPaths { paths, destination } => self.add_paths(paths, destination),
             Action::TracksLoaded {
                 finished,
                 destination,

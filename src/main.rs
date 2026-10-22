@@ -28,6 +28,7 @@ fn main() -> eframe::Result {
             .with_icon(icon)
             // Прозрачное окно: под ним система рисует настоящее размытие (см. window_glass.rs)
             .with_transparent(true),
+        wgpu_options: ui::style::window_glass::wgpu_options(),
         ..Default::default()
     };
 
