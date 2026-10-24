@@ -103,9 +103,14 @@ impl PlayerApp {
         candidates
     }
 
-    /// Альбом трека в библиотеке — ищется так же, как при группировке: без учёта регистра,
-    /// пустое имя — «Unknown …»
+    /// Альбом трека в библиотеке — ищется так же, как при группировке: без учёта регистра.
+    /// У трека без альбома или исполнителя в тегах альбома нет
     fn track_album(&mut self, track: &Track) -> Option<&AlbumGroup> {
+        // Без альбома или исполнителя в тегах трек в «Unknown Album» — вместе с чужими
+        // треками без тегов: их обложка и ссылка на такой «альбом» не про этот трек
+        if !groups::has_known_album(track) {
+            return None;
+        }
         self.core.refresh_groups();
         let artist_key = groups::album_artist(track).to_lowercase();
         let album_key = normalized_name(&track.album, groups::UNKNOWN_ALBUM);

@@ -25,6 +25,13 @@ pub fn album_artist(track: &Track) -> String {
     .to_owned()
 }
 
+/// У трека настоящий альбом: в тегах есть и название альбома, и исполнитель. Без них трек
+/// попадает в «Unknown Album» вместе со всеми такими же — общего у этих треков нет, и
+/// брать у такого «альбома» обложку для трека нельзя: она будет чужой
+pub fn has_known_album(track: &Track) -> bool {
+    !track.album.trim().is_empty() && album_artist(track) != UNKNOWN_ARTIST
+}
+
 /// Основной исполнитель из поля исполнителя: до «;» (так пишут нескольких исполнителей)
 /// и до «feat.», «ft.», «featuring». Запятая и «&» не разделители — они бывают в именах:
 /// «Earth, Wind & Fire», «Simon & Garfunkel»
@@ -55,7 +62,9 @@ pub struct AlbumGroup {
     pub year: Option<u16>,
     /// Файлы, в тегах которых искать обложку альбома, — все его треки в порядке альбома.
     /// Обложка лежит в тегах каждого файла отдельно и бывает не у всех: берётся первая
-    /// найденная
+    /// найденная. У «Unknown …» (треки без альбома или исполнителя в тегах, см.
+    /// `has_known_album`) пусто: обложка одного из таких треков — не обложка остальных,
+    /// вместо неё заглушка
     pub cover_candidates: Vec<PathBuf>,
     /// Номера треков в библиотеке — в порядке альбома: по номеру диска и трека
     pub tracks: Vec<usize>,
@@ -115,11 +124,20 @@ pub fn group(tracks: &[Track]) -> (Vec<ArtistGroup>, Vec<AlbumGroup>) {
                 index,
             )
         });
-        album.cover_candidates = album
+        // Треки альбома одинаковы по названию альбома и исполнителю — хватает первого
+        let known = album
             .tracks
-            .iter()
-            .map(|&index| tracks[index].path.clone())
-            .collect();
+            .first()
+            .is_some_and(|&index| has_known_album(&tracks[index]));
+        album.cover_candidates = if known {
+            album
+                .tracks
+                .iter()
+                .map(|&index| tracks[index].path.clone())
+                .collect()
+        } else {
+            Vec::new()
+        };
     }
     albums.sort_by_cached_key(|a| (a.title.to_lowercase(), a.artist.to_lowercase()));
     (artists, albums)
@@ -127,7 +145,7 @@ pub fn group(tracks: &[Track]) -> (Vec<ArtistGroup>, Vec<AlbumGroup>) {
 
 #[cfg(test)]
 mod tests {
-    use super::{UNKNOWN_ALBUM, UNKNOWN_ARTIST, group};
+    use super::{UNKNOWN_ALBUM, UNKNOWN_ARTIST, group, has_known_album};
     use crate::core::library::Track;
     use std::path::PathBuf;
 
@@ -179,6 +197,15 @@ mod tests {
             disc_number: None,
             album_artist: String::new(),
         }
+    }
+
+    #[test]
+    fn only_tagged_albums_are_known() {
+        assert!(has_known_album(&track("a", "Band", "Album", None)));
+        // Без альбома или без исполнителя — «Unknown …»: обложку у такого не берём
+        assert!(!has_known_album(&track("b", "Band", " ", None)));
+        assert!(!has_known_album(&track("c", "", "Album", None)));
+        assert!(!has_known_album(&track("d", "", "", None)));
     }
 
     #[test]
@@ -251,6 +278,36 @@ mod tests {
                 // Год альбома — самый ранний из его треков
                 ("Origin of Symmetry", "Muse", Some(2001), 2),
                 (UNKNOWN_ALBUM, UNKNOWN_ARTIST, None, 1),
+            ]
+        );
+    }
+
+    #[test]
+    fn unknown_albums_have_no_cover() {
+        let tracks = [
+            track("1", "Band", "Album", None),
+            track("2", "", "", None),
+            track("3", "", "", None),
+            track("4", "Band", "", None),
+        ];
+        let (_, albums) = group(&tracks);
+        let covers: Vec<_> = albums
+            .iter()
+            .map(|a| {
+                (
+                    a.title.as_str(),
+                    a.artist.as_str(),
+                    a.cover_candidates.len(),
+                )
+            })
+            .collect();
+        // Треки без тегов — в одном «альбоме», но обложку у него не ищем: заглушка
+        assert_eq!(
+            covers,
+            [
+                ("Album", "Band", 1),
+                (UNKNOWN_ALBUM, "Band", 0),
+                (UNKNOWN_ALBUM, UNKNOWN_ARTIST, 0),
             ]
         );
     }
