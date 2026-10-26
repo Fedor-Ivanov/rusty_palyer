@@ -20,7 +20,7 @@ use crate::{
 pub(crate) const ALBUM_PAGE_COVER_SIZE: f32 = 160.0;
 
 impl PlayerApp {
-    /// Страница альбома: обложка, название, исполнитель, год, кнопки «Play all» и
+    /// Страница альбома: обложка, название, исполнитель, год, кнопки «Play» и
     /// «Add to playlist» и ниже — список его треков
     pub(crate) fn render_album_page(&mut self, ui: &mut Ui, key: &AlbumKey) {
         self.core.refresh_groups();
@@ -85,9 +85,8 @@ impl PlayerApp {
                         ui.add_space(12.0);
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 8.0;
-                            play_all =
-                                components::pill_button(ui, t().play_all, ButtonStyle::Primary)
-                                    .clicked();
+                            play_all = components::pill_button(ui, t().play, ButtonStyle::Primary)
+                                .clicked();
                             add_all = components::pill_button(
                                 ui,
                                 t().add_to_queue,
@@ -126,7 +125,8 @@ impl PlayerApp {
             },
             self.focus == ListFocus::Library,
             |ui, selected| {
-                if let Some(item) = track_menu(ui, selected, &playlists) {
+                // «Go to album» здесь не нужен: мы на странице альбома
+                if let Some(item) = track_menu(ui, selected, &playlists, None) {
                     menu = Some(item);
                 }
             },
@@ -158,7 +158,7 @@ impl PlayerApp {
                 Some(item) => Some(item.into_action(selected)),
                 None if response.delete => Some(Action::RequestSongsRemoval(selected)),
                 // Двойной клик играет только этот трек: он встаёт в очередь, а не заменяет
-                // её альбомом — для альбома целиком есть кнопки «Play all» и «Add to queue»
+                // её альбомом — для альбома целиком есть кнопки «Play» и «Add to queue»
                 None => response
                     .activated
                     .map(|index| Action::PlayFromLibrary(indices[index])),

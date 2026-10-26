@@ -4,7 +4,7 @@
 use eframe::egui;
 
 use crate::{
-    core::library::groups::AlbumGroup,
+    core::library::{Track, groups::AlbumGroup},
     core::playlists::PlaylistId,
     ui::style::icons::paint_overlay_play,
     ui::{
@@ -13,6 +13,7 @@ use crate::{
         components::{self},
         dialogs::remove::GroupKind,
         i18n::{fill, t},
+        navigation::{AlbumKey, Route},
     },
 };
 
@@ -163,6 +164,17 @@ pub(crate) fn track_menu_labels(selected: usize) -> (String, String) {
 }
 
 impl PlayerApp {
+    /// Куда ведёт «Go to album» для трека: страница его альбома — если трек в медиатеке
+    /// и у него известный альбом (см. `Core::album_of`). Иначе пункта в меню нет
+    pub(crate) fn album_route(&mut self, track: &Track) -> Option<Route> {
+        if !self.core.library.paths().contains(&track.path) {
+            return None;
+        }
+        self.core
+            .album_of(track)
+            .map(|album| Route::Album(AlbumKey::of(album)))
+    }
+
     /// Сохранённые плейлисты для подменю «Add to playlist ›»
     pub(crate) fn playlist_entries(&self) -> Vec<(PlaylistId, String)> {
         self.core
@@ -220,15 +232,21 @@ pub(crate) fn group_action(
 pub(crate) enum TrackMenuItem {
     AddToQueue,
     AddToPlaylist(PlaylistChoice),
+    /// Открыть альбом трека
+    GoToAlbum(Route),
     RemoveFromLibrary,
 }
 
-/// Меню списка треков медиатеки: добавить в очередь, добавить в сохранённый плейлист
-/// и удалить из медиатеки. Для нескольких выделенных — с их числом. Возвращает выбранный пункт
+/// Меню списка треков медиатеки: добавить в очередь, добавить в сохранённый плейлист,
+/// перейти к альбому и удалить из медиатеки. Для нескольких выделенных — с их числом.
+/// `album` — куда ведёт «Go to album» (см. `PlayerApp::album_route`); `None` — пункта нет:
+/// выделено несколько треков, альбом неизвестен или мы уже на его странице.
+/// Возвращает выбранный пункт
 pub(crate) fn track_menu(
     ui: &mut egui::Ui,
     selected: usize,
     playlists: &PlaylistEntries,
+    album: Option<&Route>,
 ) -> Option<TrackMenuItem> {
     let (add_label, remove_label) = track_menu_labels(selected);
     let mut chosen = None;
@@ -237,6 +255,11 @@ pub(crate) fn track_menu(
     }
     if let Some(choice) = playlist_submenu(ui, playlists) {
         chosen = Some(TrackMenuItem::AddToPlaylist(choice));
+    }
+    if let Some(route) = album
+        && components::menu_item(ui, t().go_to_album).clicked()
+    {
+        chosen = Some(TrackMenuItem::GoToAlbum(route.clone()));
     }
     if components::menu_item(ui, &remove_label).clicked() {
         chosen = Some(TrackMenuItem::RemoveFromLibrary);
@@ -256,6 +279,7 @@ impl TrackMenuItem {
                 id,
                 tracks: selected,
             },
+            TrackMenuItem::GoToAlbum(route) => Action::Navigate(route),
             TrackMenuItem::RemoveFromLibrary => Action::RequestSongsRemoval(selected),
         }
     }

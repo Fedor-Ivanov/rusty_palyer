@@ -156,7 +156,7 @@ impl PlayerApp {
     }
 
     /// Шапка профиля исполнителя: крупное имя, сколько альбомов и песен, кнопки
-    /// «Play all» (заменить плейлист его треками и играть) и «Add to playlist»
+    /// «Play» (заменить плейлист его треками и играть) и «Add to playlist»
     pub(crate) fn render_artist_header(&mut self, ui: &mut Ui, artist: &str) {
         self.core.refresh_groups();
         let tracks = self.artist_track_indices(artist);
@@ -212,7 +212,7 @@ impl PlayerApp {
                             ui.horizontal(|ui| {
                                 ui.spacing_mut().item_spacing.x = 8.0;
                                 play_all =
-                                    components::pill_button(ui, t().play_all, ButtonStyle::Primary)
+                                    components::pill_button(ui, t().play, ButtonStyle::Primary)
                                         .clicked();
                                 add_to_queue = components::pill_button(
                                     ui,

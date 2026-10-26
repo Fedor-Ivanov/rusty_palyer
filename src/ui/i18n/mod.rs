@@ -115,6 +115,10 @@ pub struct Texts {
 
     // ---- переходы и подсказки
     pub show_artist: &'static str,
+    /// Пункт меню трека: открыть его альбом
+    pub go_to_album: &'static str,
+    /// Пункт меню трека в очереди: показать его в списке песен медиатеки
+    pub show_in_library: &'static str,
     /// Кнопка текста песни и заглушка, когда текста нет
     pub lyrics: &'static str,
     pub no_lyrics: &'static str,
@@ -134,7 +138,6 @@ pub struct Texts {
 
     // ---- действия
     pub play: &'static str,
-    pub play_all: &'static str,
     pub add_to_queue: &'static str,
     pub remove_from_library: &'static str,
     pub remove_from_queue: &'static str,

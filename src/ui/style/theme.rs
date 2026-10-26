@@ -73,7 +73,7 @@ pub const SELECTION_STROKE_WIDTH: f32 = 1.5;
 pub const MARQUEE_FILL: Color32 = HIGHLIGHT;
 pub const MARQUEE_STROKE: Color32 = HIGHLIGHT_STRONG;
 
-/// Главная кнопка действия («Play all»): светлая, с тёмным текстом — заметнее остальных
+/// Главная кнопка действия («Play»): светлая, с тёмным текстом — заметнее остальных
 pub const PRIMARY_BUTTON_FILL: Color32 = TEXT;
 pub const PRIMARY_BUTTON_TEXT: Color32 = Color32::from_rgb(0x16, 0x16, 0x18);
 pub const PRIMARY_BUTTON_HOVER: Color32 = Color32::from_rgb(0xD6, 0xD6, 0xDA);

@@ -164,6 +164,21 @@ impl Core {
         self.artist_images.prefetch(jobs);
     }
 
+    /// Альбом трека в медиатеке — ищется так же, как при группировке: без учёта регистра.
+    /// У трека без альбома или исполнителя в тегах альбома нет: он в «Unknown Album» вместе
+    /// с чужими треками без тегов (см. `groups::has_known_album`)
+    pub fn album_of(&mut self, track: &Track) -> Option<&AlbumGroup> {
+        if !groups::has_known_album(track) {
+            return None;
+        }
+        self.refresh_groups();
+        let title = track.album.trim().to_lowercase();
+        let artist = groups::album_artist(track).to_lowercase();
+        self.groups.albums.iter().find(|album| {
+            album.title.to_lowercase() == title && album.artist.to_lowercase() == artist
+        })
+    }
+
     /// Картинка исполнителя `name` для показа: готова, ищется или её нет. Не готова —
     /// исполнитель встаёт в начало фоновой очереди
     pub fn artist_image(&mut self, name: &str) -> ArtistImage {
@@ -340,7 +355,7 @@ impl Core {
     }
 
     /// Сохраняет плейлист, если он изменился с прошлого сохранения. Сколько бы изменений
-    /// ни было между вызовами (например, «Play all» и меняет треки, и выбирает текущий),
+    /// ни было между вызовами (например, «Play» и меняет треки, и выбирает текущий),
     /// файл пишется один раз
     pub fn save_queue_if_changed(&mut self) -> Result<(), String> {
         let revision = self.controller.queue_revision();

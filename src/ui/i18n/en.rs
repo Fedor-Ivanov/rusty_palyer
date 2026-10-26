@@ -51,6 +51,10 @@ pub static TEXTS: Texts = Texts {
 
     show_artist: "Show artist",
 
+    go_to_album: "Go to album",
+
+    show_in_library: "Show in library",
+
     lyrics: "Lyrics",
 
     no_lyrics: "No lyrics",
@@ -69,7 +73,6 @@ pub static TEXTS: Texts = Texts {
     repeat_one: "Repeat one",
 
     play: "Play",
-    play_all: "Play all",
     add_to_queue: "Add to queue",
     remove_from_library: "Remove from library",
     remove_from_queue: "Remove from queue",

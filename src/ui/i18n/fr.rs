@@ -52,6 +52,10 @@ pub static TEXTS: Texts = Texts {
 
     show_artist: "Afficher l'artiste",
 
+    go_to_album: "Aller à l'album",
+
+    show_in_library: "Afficher dans la bibliothèque",
+
     lyrics: "Paroles",
 
     no_lyrics: "Pas de paroles",
@@ -70,7 +74,6 @@ pub static TEXTS: Texts = Texts {
     repeat_one: "Répéter un morceau",
 
     play: "Lire",
-    play_all: "Tout lire",
     add_to_queue: "Ajouter à la file d'attente",
     remove_from_library: "Supprimer de la bibliothèque",
     remove_from_queue: "Retirer de la file d'attente",

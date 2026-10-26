@@ -32,6 +32,8 @@ pub struct TrackListView {
     id: &'static str,
     selection: Selection,
     marquee: Option<Marquee>,
+    /// Строка, к которой прокрутить в следующем кадре (см. `reveal`)
+    scroll_to: Option<usize>,
 }
 
 /// Что произошло со списком за кадр — решает вызывающий
@@ -58,7 +60,15 @@ impl TrackListView {
             id,
             selection: Selection::default(),
             marquee: None,
+            scroll_to: None,
         }
+    }
+
+    /// Выделяет строку `index` — так же, как клик по ней, — и прокручивает к ней список,
+    /// когда он покажется: «Show in library» из очереди
+    pub fn reveal(&mut self, index: usize) {
+        self.selection.click(index, egui::Modifiers::NONE);
+        self.scroll_to = Some(index);
     }
 
     pub fn selection(&self) -> &BTreeSet<usize> {
@@ -112,7 +122,14 @@ impl TrackListView {
         let modifiers = ui.input(|i| i.modifiers);
         // show_rows берёт зазор между строками из Ui, в котором вызван
         ui.spacing_mut().item_spacing.y = TRACK_ROW_GAP;
-        egui::ScrollArea::vertical()
+        let mut scroll = egui::ScrollArea::vertical();
+        // Показать строку из `reveal` — по середине видимой части списка
+        if let Some(row) = self.scroll_to.take() {
+            let row_stride = TRACK_ROW_HEIGHT + TRACK_ROW_GAP;
+            let offset = row as f32 * row_stride - (ui.available_height() - TRACK_ROW_HEIGHT) / 2.0;
+            scroll = scroll.vertical_scroll_offset(offset.max(0.0));
+        }
+        scroll
             .id_salt(self.id)
             // Отступ задаётся самой ScrollArea: полоса прокрутки остаётся у края панели,
             // а отступ прокручивается вместе со списком. Frame внутри show_rows не годится —

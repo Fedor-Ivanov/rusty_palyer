@@ -43,6 +43,10 @@ pub static TEXTS: Texts = Texts {
 
     show_artist: "Показати артиста",
 
+    go_to_album: "Перейти до альбому",
+
+    show_in_library: "Показати в медіатеці",
+
     lyrics: "Текст пісні",
 
     no_lyrics: "Немає тексту пісні",
@@ -61,7 +65,6 @@ pub static TEXTS: Texts = Texts {
     repeat_one: "Повторювати один",
 
     play: "Відтворити",
-    play_all: "Відтворити всі",
     add_to_queue: "Додати до черги",
     remove_from_library: "Видалити з медіатеки",
     remove_from_queue: "Прибрати з черги",

@@ -30,6 +30,7 @@ enum HeaderButton {
 /// Пункт меню трека плейлиста
 enum TrackItem {
     AddToQueue,
+    GoToAlbum,
     AddToLibrary,
     RemoveFromLibrary,
     Remove,
@@ -117,6 +118,22 @@ impl PlayerApp {
         }
 
         // ---- треки
+        // Один выделенный трек из медиатеки — можно перейти к его альбому. Меню открывается
+        // после выделения, так что выделение начала кадра — то, к которому оно относится
+        let single = match self
+            .playlist_tracks_view
+            .selection()
+            .iter()
+            .collect::<Vec<_>>()[..]
+        {
+            [&index] => self
+                .core
+                .playlists
+                .get(id)
+                .and_then(|playlist| playlist.tracks.get(index).cloned()),
+            _ => None,
+        };
+        let album = single.and_then(|track| self.album_route(&track));
         let Some(playlist) = self.core.playlists.get(id) else {
             return;
         };
@@ -174,6 +191,9 @@ impl PlayerApp {
                 if components::menu_item(ui, &add).clicked() {
                     menu = Some(TrackItem::AddToQueue);
                 }
+                if album.is_some() && components::menu_item(ui, t().go_to_album).clicked() {
+                    menu = Some(TrackItem::GoToAlbum);
+                }
                 if outside_library > 0 {
                     let label = t().for_tracks(
                         t().add_to_library,
@@ -209,6 +229,7 @@ impl PlayerApp {
                 id,
                 indices: selected.into_iter().collect(),
             }),
+            Some(TrackItem::GoToAlbum) => album.map(Action::Navigate),
             Some(TrackItem::AddToLibrary) => Some(Action::AddPlaylistTracksToLibrary {
                 id,
                 indices: selected.into_iter().collect(),

@@ -22,7 +22,7 @@ use crate::{
         settings::{Glass, Language},
     },
     ui::{
-        app::PlayerApp,
+        app::{ListFocus, PlayerApp},
         dialogs::{
             playlist::{NameDialog, NamePurpose},
             remove::GroupKind,
@@ -53,6 +53,9 @@ pub(crate) enum Action {
     RemoveFromLibrary(HashSet<PathBuf>),
     /// Сыграть трек очереди с номером
     PlayQueueTrack(usize),
+    /// Показать трек медиатеки (файл) в Songs: открыть список, выделить трек и прокрутить
+    /// к нему
+    ShowInLibrary(PathBuf),
     /// Убрать из очереди треки с номерами
     RemoveFromQueue(BTreeSet<usize>),
     /// Очистить очередь: воспроизведение останавливается
@@ -378,7 +381,31 @@ impl PlayerApp {
 
             Action::ToggleLyrics => self.lyrics_open = !self.lyrics_open,
 
+            Action::ShowInLibrary(path) => self.show_in_library(&path),
+
             Action::Navigate(route) => self.navigate(route),
         }
+    }
+}
+
+impl PlayerApp {
+    /// Открывает Songs и выделяет в нём трек файла `path`, как будто по нему кликнули.
+    /// Поиск сбрасывается: иначе трек мог бы оказаться скрыт
+    fn show_in_library(&mut self, path: &std::path::Path) {
+        let Some(index) = self
+            .core
+            .library
+            .tracks()
+            .iter()
+            .position(|track| track.path == path)
+        else {
+            return;
+        };
+        if !self.search.is_empty() {
+            self.search = Default::default();
+        }
+        self.navigate(Route::Songs);
+        self.library_view.reveal(index);
+        self.focus = ListFocus::Library;
     }
 }

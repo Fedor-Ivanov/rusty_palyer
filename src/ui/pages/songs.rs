@@ -29,7 +29,7 @@ impl PlayerApp {
             return;
         }
 
-        // «Play all» — показанные треки в порядке списка заменяют плейлист и играют
+        // «Play» — показанные треки в порядке списка заменяют плейлист и играют
         let mut play_all = false;
         egui::Frame::new()
             .inner_margin(egui::Margin {
@@ -39,12 +39,21 @@ impl PlayerApp {
                 bottom: 16,
             })
             .show(ui, |ui| {
-                play_all =
-                    components::pill_button(ui, t().play_all, ButtonStyle::Primary).clicked();
+                play_all = components::pill_button(ui, t().play, ButtonStyle::Primary).clicked();
             });
         if play_all {
             self.dispatch(Action::PlayLibraryTracks(self.shown_song_indices()));
         }
+
+        // «Go to album» — только для одного выделенного трека. Меню открывается после
+        // выделения, так что выделение начала кадра — то, к которому оно относится
+        let album = match self.library_view.selection().iter().collect::<Vec<_>>()[..] {
+            [&row] => self
+                .song_index(row)
+                .and_then(|index| self.core.library.tracks().get(index).cloned())
+                .and_then(|track| self.album_route(&track)),
+            _ => None,
+        };
 
         // Номера строк списка — номера в `found` (во время поиска) или сразу в медиатеке.
         // Меню знает только, сколько строк выделено: какие — узнаём после списка
@@ -63,7 +72,7 @@ impl PlayerApp {
             },
             self.focus == ListFocus::Library,
             |ui, selected| {
-                if let Some(item) = track_menu(ui, selected, &playlists) {
+                if let Some(item) = track_menu(ui, selected, &playlists, album.as_ref()) {
                     menu = Some(item);
                 }
             },

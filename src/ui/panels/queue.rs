@@ -81,6 +81,25 @@ impl PlayerApp {
             return;
         }
 
+        // Один выделенный трек из медиатеки — можно показать его там и перейти к его альбому.
+        // Меню открывается после выделения, так что выделение начала кадра — то, к которому
+        // оно относится
+        let single = match self.queue_view.selection().iter().collect::<Vec<_>>()[..] {
+            [&index] => self
+                .core
+                .controller
+                .player()
+                .track_list
+                .tracks
+                .get(index)
+                .cloned(),
+            _ => None,
+        };
+        let album = single.as_ref().and_then(|track| self.album_route(track));
+        let in_library = single
+            .filter(|track| self.core.library.paths().contains(&track.path))
+            .map(|track| track.path);
+
         // Сколько выделенных треков не из медиатеки (добавлены кнопкой «+» мимо неё) — для
         // пункта «Add to library». Удалить из медиатеки отсюда нельзя: очередь — про то, что
         // слушаем, а не про медиатеку. Меню открывается после выделения, так что выделение
@@ -97,6 +116,8 @@ impl PlayerApp {
         // Меню знает только, сколько строк выделено: какие — узнаём после списка
         let mut remove = false;
         let mut add_to_library = false;
+        let mut show_in_library = false;
+        let mut go_to_album = false;
         let current = list.current_index;
         let response = self.queue_view.show(
             ui,
@@ -107,6 +128,13 @@ impl PlayerApp {
             },
             self.focus == ListFocus::Queue,
             |ui, selected| {
+                if in_library.is_some() && components::menu_item(ui, t().show_in_library).clicked()
+                {
+                    show_in_library = true;
+                }
+                if album.is_some() && components::menu_item(ui, t().go_to_album).clicked() {
+                    go_to_album = true;
+                }
                 if outside_library > 0 {
                     let label = t().for_tracks(
                         t().add_to_library,
@@ -128,7 +156,11 @@ impl PlayerApp {
         if response.interacted {
             self.focus = ListFocus::Queue;
         }
-        if add_to_library {
+        if show_in_library && let Some(path) = in_library {
+            self.dispatch(Action::ShowInLibrary(path));
+        } else if go_to_album && let Some(route) = album {
+            self.dispatch(Action::Navigate(route));
+        } else if add_to_library {
             let selected = self.queue_view.selection().iter().copied().collect();
             self.dispatch(Action::AddQueueTracksToLibrary(selected));
         } else if remove || response.delete {

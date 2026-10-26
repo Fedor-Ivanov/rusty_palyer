@@ -8,8 +8,7 @@ use eframe::egui::{
 
 use crate::{
     core::library::{
-        Track,
-        groups::{self, AlbumGroup},
+        Track, groups,
         metadata::{FileMetadata, get_file_metadata},
     },
     ui::action::Action,
@@ -97,26 +96,10 @@ impl PlayerApp {
     /// разные), потом в остальных треках его альбома — обложка бывает не у всех
     pub(crate) fn cover_candidates(&mut self, track: &Track) -> Vec<PathBuf> {
         let mut candidates = vec![track.path.clone()];
-        if let Some(album) = self.track_album(track) {
+        if let Some(album) = self.core.album_of(track) {
             candidates.extend(album.cover_candidates.iter().cloned());
         }
         candidates
-    }
-
-    /// Альбом трека в библиотеке — ищется так же, как при группировке: без учёта регистра.
-    /// У трека без альбома или исполнителя в тегах альбома нет
-    fn track_album(&mut self, track: &Track) -> Option<&AlbumGroup> {
-        // Без альбома или исполнителя в тегах трек в «Unknown Album» — вместе с чужими
-        // треками без тегов: их обложка и ссылка на такой «альбом» не про этот трек
-        if !groups::has_known_album(track) {
-            return None;
-        }
-        self.core.refresh_groups();
-        let artist_key = groups::album_artist(track).to_lowercase();
-        let album_key = normalized_name(&track.album, groups::UNKNOWN_ALBUM);
-        self.core.groups.albums.iter().find(|album| {
-            album.title.to_lowercase() == album_key && album.artist.to_lowercase() == artist_key
-        })
     }
 
     /// Детали текущего трека: название, исполнитель и альбом (ссылки — если они есть
@@ -127,7 +110,7 @@ impl PlayerApp {
             return;
         };
         // Исполнитель и альбом трека в библиотеке — ищутся так же, как при группировке
-        let album_in_library = self.track_album(&track).map(AlbumKey::of);
+        let album_in_library = self.core.album_of(&track).map(AlbumKey::of);
         // Ссылка ведёт к исполнителю альбома: «Angèle; Kiddy Smile» — к Angèle
         let artist_key = groups::album_artist(&track).to_lowercase();
         let artist_in_library = self
@@ -375,11 +358,4 @@ impl PlayerApp {
             .on_hover_text(t().show_current_track)
             .clicked()
     }
-}
-
-/// Название альбома для сравнения — как при группировке: без пробелов по краям,
-/// в нижнем регистре, пустое — `unknown`
-fn normalized_name(text: &str, unknown: &str) -> String {
-    let text = text.trim();
-    if text.is_empty() { unknown } else { text }.to_lowercase()
 }
